@@ -41,27 +41,12 @@ OFFICE_LNK_NAMES = {
 def apply_taskbar_actions(settings: dict[str, Any]) -> list[dict[str, Any]]:
     """Aplica a configuração da barra de tarefas.
 
-    Preferência:
-      - settings['pins'] = lista ordenada de ids (explorer, word, ...)
-      - settings['replace'] = True → só esses ícones (Remove defaults)
-    Compatibilidade: ainda aceita pin/unpin com caminhos absolutos.
+    settings['pins'] = lista ordenada de ids (explorer, word, ...)
+    settings['replace'] = True → só esses ícones
     """
-    report: list[dict[str, Any]] = []
-
-    pins = settings.get("pins")
-    if pins is None and not settings.get("pin") and not settings.get("unpin"):
-        pins = list(DEFAULT_PIN_ORDER)
-
-    if pins is not None:
-        replace = bool(settings.get("replace", True))
-        report.extend(apply_ordered_pins(list(pins), replace=replace))
-        return report
-
-    for path in settings.get("unpin", []):
-        report.append(_invoke_verb(Path(path), unpin=True))
-    for path in settings.get("pin", []):
-        report.append(_invoke_verb(Path(path), unpin=False))
-    return report
+    pins = settings.get("pins") or list(DEFAULT_PIN_ORDER)
+    replace = bool(settings.get("replace", True))
+    return apply_ordered_pins(list(pins), replace=replace)
 
 
 def apply_ordered_pins(pin_ids: list[str], *, replace: bool = True) -> list[dict[str, Any]]:
@@ -158,14 +143,6 @@ def resolve_app_path(app_id: str) -> Path | None:
     if p.exists():
         return p
     return None
-
-
-def pin(path: str | Path) -> dict[str, str]:
-    return _invoke_verb(Path(path), unpin=False)
-
-
-def unpin(path: str | Path) -> dict[str, str]:
-    return _invoke_verb(Path(path), unpin=True)
 
 
 def _pins_dir() -> Path:

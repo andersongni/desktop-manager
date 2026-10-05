@@ -405,8 +405,6 @@ class AdminApp(tk.Tk):
         s["taskbar"]["enabled"] = self.var_tb_enabled.get()
         s["taskbar"]["replace"] = self.var_tb_replace.get()
         s["taskbar"]["pins"] = list(self.tb_pins)
-        s["taskbar"]["pin"] = []
-        s["taskbar"]["unpin"] = []
         return s
 
     def save(self) -> None:

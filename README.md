@@ -80,7 +80,7 @@ Saída: `release\DesktopManager\`
 
 ```bat
 python main.py admin
-python main.py run
+python main.py test
 python main.py install
 python main.py uninstall
 python main.py status

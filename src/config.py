@@ -7,7 +7,7 @@ from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
-from .paths import config_path, project_root
+from .paths import config_path
 
 
 DEFAULT_SETTINGS: dict[str, Any] = {
@@ -60,8 +60,6 @@ DEFAULT_SETTINGS: dict[str, Any] = {
         "enabled": True,
         "replace": True,
         "pins": ["explorer", "word", "excel", "powerpoint", "chrome"],
-        "pin": [],
-        "unpin": [],
     },
     "triggers": {
         "on_startup": True,
@@ -101,9 +99,3 @@ def _merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
         else:
             base[key] = value
     return base
-
-
-def settings_for_install() -> Path:
-    """Caminho da config na instalação (LOCALAPPDATA) ou do projeto em modo dev."""
-    installed = project_root() / "config" / "settings.json"
-    return installed

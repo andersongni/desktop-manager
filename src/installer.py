@@ -74,14 +74,14 @@ def copy_to_install_dir(source: Path | None = None, dest: Path | None = None) ->
             if s.exists():
                 shutil.copy2(s, dst / name)
     else:
-        for name in ("src", "config", "assets", "admin", "installer"):
+        for name in ("src", "config", "assets", "admin"):
             s = src / name
             if s.exists():
                 target = dst / name
                 if target.exists():
                     shutil.rmtree(target)
                 shutil.copytree(s, target, ignore=ignore)
-        for name in ("main.py", "requirements.txt", "README.md", "entry_agent.py", "entry_admin.py", "entry_setup.py"):
+        for name in ("main.py", "README.md", "entry_agent.py", "entry_admin.py", "entry_setup.py"):
             s = src / name
             if s.exists():
                 shutil.copy2(s, dst / name)
@@ -99,10 +99,10 @@ def copy_to_install_dir(source: Path | None = None, dest: Path | None = None) ->
 
 
 def register_startup_run_key(root: Path) -> None:
-    value = agent_cmd(root, trigger="startup", once=False)
-    # agent_cmd em modo python já inclui cmd /c; em modo exe precisa do path completo
     if (root / AGENT_EXE).exists():
         value = f'"{root / AGENT_EXE}" --trigger startup'
+    else:
+        value = agent_cmd(root, trigger="startup", once=False)
     with winreg.OpenKey(
         winreg.HKEY_CURRENT_USER,
         r"Software\Microsoft\Windows\CurrentVersion\Run",

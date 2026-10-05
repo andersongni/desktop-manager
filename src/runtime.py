@@ -47,12 +47,12 @@ def admin_launcher(root: Path | None = None) -> tuple[str, str]:
 def setup_launcher(root: Path | None = None, *, uninstall: bool = False) -> tuple[str, str]:
     root = root or project_root()
     exe = root / SETUP_EXE
-    flag = "--uninstall" if uninstall else "--install"
+    flag = "--wizard uninstall" if uninstall else "--wizard install"
     if exe.exists():
         return str(exe), flag
     if is_frozen():
         return str(sys.executable), flag
-    return str(sys.executable), f"-m src.installer {flag}"
+    return str(sys.executable), f"-m admin.setup_wizard {flag}"
 
 
 def _pythonw() -> Path:

@@ -48,12 +48,6 @@ def organize_desktop(settings: dict[str, Any]) -> list[dict[str, str]]:
         str(x).lower()
         for x in settings.get("keep_shortcuts", list(DEFAULT_KEEP_SHORTCUTS))
     ]
-    # Compat: leave_shortcuts=True antigo = manter todos; False = remover todos
-    if "keep_shortcuts" not in settings and settings.get("leave_shortcuts") is True:
-        keep_all_shortcuts = True
-    else:
-        keep_all_shortcuts = False
-
     remove_other = settings.get("remove_other_shortcuts", True)
 
     ext_map: dict[str, str] = {}
@@ -73,8 +67,6 @@ def organize_desktop(settings: dict[str, Any]) -> list[dict[str, str]]:
 
         # --- Atalhos ---
         if suffix in {".lnk", ".url", ".website"}:
-            if keep_all_shortcuts:
-                continue
             if _is_kept_shortcut(item, keep_ids):
                 actions.append(
                     {

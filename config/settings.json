@@ -35,9 +35,7 @@
   "taskbar": {
     "enabled": true,
     "replace": true,
-    "pins": ["explorer", "word", "excel", "powerpoint", "chrome"],
-    "pin": [],
-    "unpin": []
+    "pins": ["explorer", "word", "excel", "powerpoint", "chrome"]
   },
   "triggers": {
     "on_startup": true,

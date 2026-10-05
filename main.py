@@ -31,8 +31,6 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("uninstall", help="Desinstalar")
     sub.add_parser("status", help="Status da instalação")
     sub.add_parser("test", help="Testar configuração (sem aplicar arrumações)")
-    # alias antigo
-    sub.add_parser("run", help="Alias de 'test'")
 
     args = parser.parse_args(argv)
 
@@ -61,7 +59,7 @@ def main(argv: list[str] | None = None) -> int:
 
         return installer_main(["--status"])
 
-    if args.command in ("test", "run"):
+    if args.command == "test":
         from src.agent import main as agent_main
 
         return agent_main(["--trigger", "manual", "--once"])
