@@ -30,7 +30,9 @@ def main(argv: list[str] | None = None) -> int:
 
     sub.add_parser("uninstall", help="Desinstalar")
     sub.add_parser("status", help="Status da instalação")
-    sub.add_parser("run", help="Executar ações uma vez (manual)")
+    sub.add_parser("test", help="Testar configuração (sem aplicar arrumações)")
+    # alias antigo
+    sub.add_parser("run", help="Alias de 'test'")
 
     args = parser.parse_args(argv)
 
@@ -45,24 +47,21 @@ def main(argv: list[str] | None = None) -> int:
         return admin_main()
 
     if args.command == "install":
-        from src.installer import main as installer_main
+        from admin.setup_wizard import main as wizard_main
 
-        flags = ["--install"]
-        if args.use_run_key:
-            flags.append("--use-run-key")
-        return installer_main(flags)
+        return wizard_main(["--wizard", "install"])
 
     if args.command == "uninstall":
-        from src.installer import main as installer_main
+        from admin.setup_wizard import main as wizard_main
 
-        return installer_main(["--uninstall"])
+        return wizard_main(["--wizard", "uninstall"])
 
     if args.command == "status":
         from src.installer import main as installer_main
 
         return installer_main(["--status"])
 
-    if args.command == "run":
+    if args.command in ("test", "run"):
         from src.agent import main as agent_main
 
         return agent_main(["--trigger", "manual", "--once"])

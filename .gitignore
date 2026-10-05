@@ -14,9 +14,7 @@ install.json
 *.spec
 desktop-manager-windows-x64-*.zip
 
-# Wallpaper de exemplo é gerado no CI / build local
+# Gerados localmente; as defaults de marca (desktop-4x3/16x9.jpg) ficam no repo
 assets/wallpaper/*.bmp
-assets/wallpaper/*.jpg
-assets/wallpaper/*.jpeg
-assets/wallpaper/*.png
-!assets/wallpaper/.gitkeep
+assets/wallpaper/desktop.jpg
+assets/wallpaper/desktop.jpeg

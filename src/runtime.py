@@ -73,7 +73,10 @@ def distribution_files(root: Path | None = None) -> list[str]:
         "assets",
         "README.md",
         "INSTALAR.cmd",
+        "INSTALAR.vbs",
         "DESINSTALAR.cmd",
+        "DESINSTALAR.vbs",
         "ADMINISTRAR.cmd",
+        "TESTAR_CONFIG.cmd",
     ]
     return [n for n in names if (root / n).exists()]

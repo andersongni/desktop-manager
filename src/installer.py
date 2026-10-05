@@ -26,8 +26,11 @@ from .runtime import (
 
 logger = logging.getLogger(__name__)
 
-TASK_STARTUP = "DesktopManager\\Startup"
-TASK_SHUTDOWN = "DesktopManager\\Shutdown"
+# Nomes planos — pastas aninhadas (DesktopManager\...) costumam exigir admin
+TASK_STARTUP = "DesktopManagerStartup"
+TASK_SHUTDOWN = "DesktopManagerShutdown"
+# Nomes antigos (versões anteriores) — limpos na desinstalação
+TASK_LEGACY = ("DesktopManager\\Startup", "DesktopManager\\Shutdown")
 RUN_VALUE = "DesktopManager"
 
 
@@ -126,8 +129,13 @@ def unregister_startup_run_key() -> None:
         logger.warning("Não removeu chave Run: %s", exc)
 
 
-def register_scheduled_tasks(root: Path) -> None:
-    """Cria tarefas no Agendador: logon (residente) e evento de desligamento."""
+def register_scheduled_tasks(root: Path) -> bool:
+    """Registra início (Run ou tarefa) e desligamento (Agendador).
+
+    Retorna True se o startup ficou ativo (tarefa ou chave Run).
+    ONLOGON via schtasks frequentemente retorna 'Acesso negado' sem admin;
+    nesse caso usamos HKCU\\...\\Run (padrão confiável por usuário).
+    """
     if (root / AGENT_EXE).exists():
         agent = root / AGENT_EXE
         startup_tr = f'"{agent}" --trigger startup'
@@ -136,12 +144,18 @@ def register_scheduled_tasks(root: Path) -> None:
         startup_tr = agent_cmd(root, trigger="startup", once=False)
         shutdown_tr = agent_cmd(root, trigger="shutdown", once=True)
 
-    _schtasks_create(
+    startup_ok = _schtasks_create(
         TASK_STARTUP,
         startup_tr,
-        ["/SC", "ONLOGON", "/RL", "LIMITED"],
+        # /IT = só com usuário logado; /RL LIMITED = sem elevação na execução
+        ["/SC", "ONLOGON", "/RL", "LIMITED", "/IT"],
     )
-    _schtasks_create(
+    if not startup_ok:
+        logger.info("Startup via Agendador indisponível — usando chave Run (HKCU)")
+        register_startup_run_key(root)
+        startup_ok = True
+
+    shutdown_ok = _schtasks_create(
         TASK_SHUTDOWN,
         shutdown_tr,
         [
@@ -155,10 +169,17 @@ def register_scheduled_tasks(root: Path) -> None:
             "LIMITED",
         ],
     )
+    if not shutdown_ok:
+        logger.warning(
+            "Tarefa de desligamento não criada. O agente residente ainda cobre "
+            "WM_ENDSESSION quando estiver em execução."
+        )
+
+    return startup_ok
 
 
 def unregister_scheduled_tasks() -> None:
-    for name in (TASK_STARTUP, TASK_SHUTDOWN):
+    for name in (TASK_STARTUP, TASK_SHUTDOWN, *TASK_LEGACY):
         subprocess.run(
             ["schtasks", "/Delete", "/TN", name, "/F"],
             capture_output=True,
@@ -168,7 +189,7 @@ def unregister_scheduled_tasks() -> None:
     logger.info("Tarefas agendadas removidas")
 
 
-def _schtasks_create(name: str, tr: str, schedule_args: list[str]) -> None:
+def _schtasks_create(name: str, tr: str, schedule_args: list[str]) -> bool:
     subprocess.run(
         ["schtasks", "/Delete", "/TN", name, "/F"],
         capture_output=True,
@@ -182,9 +203,11 @@ def _schtasks_create(name: str, tr: str, schedule_args: list[str]) -> None:
         creationflags=subprocess.CREATE_NO_WINDOW,
     )
     if result.returncode != 0:
-        logger.warning("schtasks %s: %s %s", name, result.stdout, result.stderr)
-    else:
-        logger.info("Tarefa criada: %s", name)
+        detail = (result.stdout or "") + (result.stderr or "")
+        logger.warning("schtasks %s: %s", name, detail.strip() or f"exit {result.returncode}")
+        return False
+    logger.info("Tarefa criada: %s", name)
+    return True
 
 
 def create_shortcuts(root: Path) -> None:
@@ -268,19 +291,24 @@ def install(use_tasks: bool = True) -> Path:
         try:
             register_scheduled_tasks(root)
         except Exception as exc:  # noqa: BLE001
-            logger.warning("Tarefas agendadas falharam (%s) — usando chave Run", exc)
+            logger.warning("Registro automático falhou (%s) — usando chave Run", exc)
             register_startup_run_key(root)
     else:
         register_startup_run_key(root)
 
     create_shortcuts(root)
+    info = status()
     logger.info("Instalação concluída em %s", root)
     print(f"\nDesktop Manager instalado em:\n  {root}")
     print("Atalhos: Menu Iniciar → Desktop Manager")
     if (root / ADMIN_EXE).exists():
-        print(f"Admin: {root / ADMIN_EXE}\n")
+        print(f"Admin: {root / ADMIN_EXE}")
     else:
-        print("Admin: execute run_admin.cmd ou o atalho do Menu Iniciar\n")
+        print("Admin: execute run_admin.cmd ou o atalho do Menu Iniciar")
+    print(
+        f"Startup: {'Run (HKCU)' if info.get('run_key') else 'Agendador' if info.get('tasks') else 'NÃO REGISTRADO'}"
+    )
+    print(f"Tarefas: {', '.join(info.get('tasks') or []) or 'nenhuma'}\n")
     return root
 
 
@@ -347,7 +375,7 @@ def status() -> dict:
     except OSError:
         pass
 
-    for name in (TASK_STARTUP, TASK_SHUTDOWN):
+    for name in (TASK_STARTUP, TASK_SHUTDOWN, *TASK_LEGACY):
         r = subprocess.run(
             ["schtasks", "/Query", "/TN", name],
             capture_output=True,
@@ -359,8 +387,10 @@ def status() -> dict:
     return info
 
 
+
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Instalador do Desktop Manager")
+    """CLI do instalador (use --cli no entry_setup para forçar este modo)."""
+    parser = argparse.ArgumentParser(description="Instalador do Desktop Manager (CLI)")
     g = parser.add_mutually_exclusive_group(required=True)
     g.add_argument("--install", action="store_true", help="Instalar e registrar no Windows")
     g.add_argument("--uninstall", action="store_true", help="Desinstalar")

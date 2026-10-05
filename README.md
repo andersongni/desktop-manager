@@ -13,7 +13,7 @@ O PC destino **não precisa de Python** nem de outros componentes.
 
 1. Abra a página de [**Releases**](https://github.com/andersongni/desktop-manager/releases)
 2. Baixe `desktop-manager-windows-x64-*.zip`
-3. Extraia e execute **`INSTALAR.cmd`**
+3. Extraia e execute **`INSTALAR`** (assistente gráfico — sem tela preta)
 4. Configure com **`ADMINISTRAR.cmd`**
 
 Também é possível baixar o artifact da [aba Actions](https://github.com/andersongni/desktop-manager/actions) (workflow **Build & Release**): o download do Actions já vem como um `.zip` com os arquivos do pacote na raiz (não há zip dentro de zip).
@@ -33,11 +33,11 @@ Ou use **Actions → Build & Release → Run workflow** com `create_release=true
 
 | Função | Descrição |
 |--------|-----------|
-| **Plano de fundo** | Define wallpaper a partir de uma imagem do projeto |
-| **Organizar arquivos** | Move itens da Desktop para Documentos, Imagens, Vídeos, Músicas, Downloads |
-| **Navegador padrão** | Abre as Configurações do Windows para você confirmar o navegador |
-| **Limpar navegação** | Remove cache (e opcionalmente cookies/histórico) do Chrome, Edge, Firefox, Brave |
-| **Barra de tarefas** | Tenta fixar/desafixar atalhos (desafixar costuma funcionar; fixar pode ser bloqueado pelo Windows) |
+| **Plano de fundo** | Só no startup/shutdown: wallpaper 4:3 ou 16:9 conforme a tela |
+| **Organizar arquivos** | Só no startup/shutdown: atalhos Word/Excel/PowerPoint/Chrome; move arquivos por tipo |
+| **Navegador padrão** | Só no startup/shutdown: abre Configurações do Windows para confirmar |
+| **Limpar navegação** | Só no startup/shutdown: cache (cookies/histórico opcionais) |
+| **Barra de tarefas** | Só no startup/shutdown: Explorer, Word, Excel, PowerPoint e Chrome |
 | **Segundo plano** | Agente residente no logon + tarefa no evento de desligamento |
 | **Admin / Instalador** | Painel gráfico e scripts de instalação |
 
@@ -45,13 +45,14 @@ Ou use **Actions → Build & Release → Run workflow** com `create_release=true
 
 | Arquivo | Função |
 |---------|--------|
-| `INSTALAR.cmd` | Instala e registra início/desligamento |
-| `DESINSTALAR.cmd` | Remove |
+| `INSTALAR.vbs` / `.cmd` | Assistente gráfico de instalação |
+| `DESINSTALAR.vbs` / `.cmd` | Assistente gráfico de remoção |
+| `DesktopManagerSetup.exe` | Wizard (Instalar / Desinstalar) |
 | `ADMINISTRAR.cmd` | Painel de configuração |
-| `EXECUTAR_AGORA.cmd` | Roda as ações uma vez |
+| `TESTAR_CONFIG.cmd` | Testa a configuração (não aplica arrumações) |
 | `DesktopManager*.exe` | Binários (runtime embutido) |
 | `config/settings.json` | Configuração |
-| `assets/wallpaper/` | Imagem de fundo |
+| `assets/wallpaper/` | `desktop-4x3.jpg` e `desktop-16x9.jpg` |
 
 ## Desenvolvimento
 
@@ -63,7 +64,6 @@ Ou use **Actions → Build & Release → Run workflow** com `create_release=true
 ```bat
 git clone https://github.com/andersongni/desktop-manager.git
 cd desktop-manager
-python scripts\make_wallpaper.py
 python main.py admin
 ```
 
@@ -90,11 +90,15 @@ python main.py status
 
 Arquivo: `config/settings.json`
 
-- `wallpaper.image` — caminho da imagem  
+- `wallpaper.auto_aspect` — escolhe 4:3 ou 16:9 pela tela (padrão: true)  
+- `wallpaper.image_4x3` / `image_16x9` — imagens padrão da marca  
+- `wallpaper.image` — override manual (se `auto_aspect` for false)  
 - `organize_desktop.rules` — pasta → extensões  
 - `browser.set_default` / `default_browser` — chrome, edge, firefox, brave  
 - `browser.clear_data` — cache / cookies / histórico  
-- `taskbar.pin` / `taskbar.unpin` — caminhos de `.exe` ou `.lnk`  
+- `taskbar.pins` — ordem: `explorer`, `word`, `excel`, `powerpoint`, `chrome`  
+- `taskbar.replace` — remove pins padrão e deixa só a lista  
+
 - `triggers.on_startup` / `on_shutdown`  
 
 ## Como funciona a instalação
@@ -111,7 +115,7 @@ Logs em `logs/desktop-manager-AAAA-MM-DD.log`.
 ## Limitações do Windows
 
 - **Navegador padrão:** a Microsoft exige confirmação manual nas Configurações.
-- **Fixar na barra de tarefas:** APIs de pin foram restringidas no Windows 10/11; desafixar normalmente funciona.
+- **Barra de tarefas:** usa `LayoutModification.xml` + reinício do Explorer; apps do Office ausentes são ignorados.  
 - **Limpeza de dados:** feche o navegador antes; arquivos em uso são ignorados.
 
 ## Estrutura

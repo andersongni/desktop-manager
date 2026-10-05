@@ -72,6 +72,7 @@ def _build_exe(entry: str, name: str, *, windowed: bool) -> Path:
         "src.wallpaper",
         "admin",
         "admin.admin_gui",
+        "admin.setup_wizard",
     ]
     for mod in hidden:
         cmd.extend(["--hidden-import", mod])
@@ -94,17 +95,20 @@ def assemble() -> Path:
         shutil.rmtree(RELEASE)
     RELEASE.mkdir(parents=True)
 
-    # Garante wallpaper
-    bmp = ROOT / "assets" / "wallpaper" / "desktop.bmp"
-    if not bmp.exists():
-        subprocess.check_call([sys.executable, str(ROOT / "scripts" / "make_wallpaper.py")])
+    for name in ("desktop-4x3.jpg", "desktop-16x9.jpg"):
+        img = ROOT / "assets" / "wallpaper" / name
+        if not img.exists():
+            raise FileNotFoundError(
+                f"Wallpaper padrão ausente: {img}. "
+                "Inclua desktop-4x3.jpg e desktop-16x9.jpg em assets/wallpaper/"
+            )
 
     print("Empacotando Agent...")
     agent = _build_exe("entry_agent.py", "DesktopManagerAgent", windowed=True)
     print("Empacotando Admin...")
     admin = _build_exe("entry_admin.py", "DesktopManagerAdmin", windowed=True)
-    print("Empacotando Setup...")
-    setup = _build_exe("entry_setup.py", "DesktopManagerSetup", windowed=False)
+    print("Empacotando Setup (wizard gráfico)...")
+    setup = _build_exe("entry_setup.py", "DesktopManagerSetup", windowed=True)
 
     shutil.copy2(agent, RELEASE / agent.name)
     shutil.copy2(admin, RELEASE / admin.name)
@@ -115,39 +119,40 @@ def assemble() -> Path:
     if (ROOT / "README.md").exists():
         shutil.copy2(ROOT / "README.md", RELEASE / "README.md")
 
+    # Atalhos sem janela preta: VBS inicia o wizard windowed
+    (RELEASE / "INSTALAR.vbs").write_text(
+        'Set sh = CreateObject("WScript.Shell")\r\n'
+        'Set fso = CreateObject("Scripting.FileSystemObject")\r\n'
+        "dir = fso.GetParentFolderName(WScript.ScriptFullName)\r\n"
+        'sh.Run """" & dir & "\\DesktopManagerSetup.exe"" --wizard install", 1, False\r\n',
+        encoding="ascii",
+    )
+    (RELEASE / "DESINSTALAR.vbs").write_text(
+        'Set sh = CreateObject("WScript.Shell")\r\n'
+        'Set fso = CreateObject("Scripting.FileSystemObject")\r\n'
+        "dir = fso.GetParentFolderName(WScript.ScriptFullName)\r\n"
+        'sh.Run """" & dir & "\\DesktopManagerSetup.exe"" --wizard uninstall", 1, False\r\n',
+        encoding="ascii",
+    )
     _write_cmd(
         RELEASE / "INSTALAR.cmd",
         "@echo off\n"
-        "cd /d \"%~dp0\"\n"
-        "echo.\n"
-        "echo === Desktop Manager — Instalacao (sem Python) ===\n"
-        "echo.\n"
-        "DesktopManagerSetup.exe --install\n"
-        "echo.\n"
-        "pause\n",
+        "wscript //nologo \"%~dp0INSTALAR.vbs\"\n",
     )
     _write_cmd(
         RELEASE / "DESINSTALAR.cmd",
         "@echo off\n"
-        "cd /d \"%~dp0\"\n"
-        "echo.\n"
-        "echo === Desktop Manager — Desinstalacao ===\n"
-        "echo.\n"
-        "DesktopManagerSetup.exe --uninstall\n"
-        "pause\n",
+        "wscript //nologo \"%~dp0DESINSTALAR.vbs\"\n",
     )
     _write_cmd(
         RELEASE / "ADMINISTRAR.cmd",
         "@echo off\n"
-        "cd /d \"%~dp0\"\n"
-        "start \"\" DesktopManagerAdmin.exe\n",
+        "start \"\" \"%~dp0DesktopManagerAdmin.exe\"\n",
     )
     _write_cmd(
-        RELEASE / "EXECUTAR_AGORA.cmd",
+        RELEASE / "TESTAR_CONFIG.cmd",
         "@echo off\n"
-        "cd /d \"%~dp0\"\n"
-        "DesktopManagerAgent.exe --trigger manual --once\n"
-        "pause\n",
+        "start \"\" \"%~dp0DesktopManagerAgent.exe\" --trigger manual --once\n",
     )
 
     (RELEASE / "LEIA-ME.txt").write_text(
@@ -155,19 +160,19 @@ def assemble() -> Path:
         "=================================\n\n"
         "Este computador NÃO precisa ter Python instalado.\n\n"
         "1. Copie esta pasta inteira para o PC destino\n"
-        "2. (Opcional) Substitua assets\\wallpaper\\desktop.bmp pela sua imagem\n"
-        "3. Execute INSTALAR.cmd\n"
-        "4. Use ADMINISTRAR.cmd para configurar\n\n"
+        "2. Execute INSTALAR (assistente grafico — sem tela preta)\n"
+        "3. Use ADMINISTRAR para configurar\n\n"
+        "O plano de fundo 4:3 ou 16:9 e escolhido automaticamente pela resolucao da tela.\n\n"
         "Arquivos:\n"
-        "  INSTALAR.cmd              — instala e registra no Windows\n"
-        "  DESINSTALAR.cmd           — remove\n"
-        "  ADMINISTRAR.cmd           — painel de configuração\n"
-        "  EXECUTAR_AGORA.cmd        — roda as ações uma vez\n"
-        "  DesktopManagerAgent.exe   — agente em segundo plano\n"
-        "  DesktopManagerAdmin.exe   — administração\n"
-        "  DesktopManagerSetup.exe   — instalador\n"
-        "  config\\settings.json      — configuração\n"
-        "  assets\\wallpaper\\         — imagem de fundo\n",
+        "  INSTALAR.vbs / .cmd       - assistente de instalacao\n"
+        "  DESINSTALAR.vbs / .cmd    - assistente de remocao\n"
+        "  ADMINISTRAR.cmd           - painel de configuracao\n"
+        "  TESTAR_CONFIG.cmd         - testa a configuracao (sem arrumar o ambiente)\n"
+        "  DesktopManagerSetup.exe   - wizard (Instalar/Desinstalar)\n"
+        "  DesktopManagerAgent.exe   - agente em segundo plano\n"
+        "  DesktopManagerAdmin.exe   - administracao\n"
+        "  config\\settings.json      - configuracao\n"
+        "  assets\\wallpaper\\         - desktop-4x3.jpg e desktop-16x9.jpg\n",
         encoding="utf-8",
     )
 
