@@ -20,3 +20,9 @@ assets/wallpaper/*.jpg
 assets/wallpaper/*.jpeg
 assets/wallpaper/*.png
 !assets/wallpaper/.gitkeep
+
+# Vagrant (ambiente de testes)
+**/.vagrant/
+*.box
+test/workspace/*
+!test/workspace/.gitkeep
