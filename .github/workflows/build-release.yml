@@ -57,25 +57,40 @@ jobs:
           "version=$ver" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
           Write-Host "Package version: $ver"
 
-      - name: Zip release package
-        id: zip
-        shell: pwsh
-        run: |
-          $ver = "${{ steps.meta.outputs.version }}"
-          $src = "release\DesktopManager"
-          $zip = "desktop-manager-windows-x64-$ver.zip"
-          if (Test-Path $zip) { Remove-Item $zip -Force }
-          Compress-Archive -Path "$src\*" -DestinationPath $zip -Force
-          "zip_name=$zip" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
-          Get-Item $zip | Format-List FullName, Length
-
+      # Artifact: envia a PASTA (não um .zip). O download do Actions já compacta;
+      # se enviarmos um .zip, o usuário recebe zip-dentro-de-zip.
       - name: Upload build artifact
         uses: actions/upload-artifact@v7
         with:
           name: desktop-manager-windows-x64-${{ steps.meta.outputs.version }}
-          path: ${{ steps.zip.outputs.zip_name }}
+          path: release/DesktopManager/
           if-no-files-found: error
           retention-days: 30
+
+      # Release: um único .zip com o conteúdo da pasta na raiz (INSTALAR.cmd etc.)
+      - name: Zip package for GitHub Release
+        id: zip
+        if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.create_release)
+        shell: pwsh
+        run: |
+          $ver = "${{ steps.meta.outputs.version }}"
+          $src = "release\DesktopManager"
+          $stage = "release\stage-DesktopManager"
+          $zip = "desktop-manager-windows-x64-$ver.zip"
+          if (Test-Path $stage) { Remove-Item $stage -Recurse -Force }
+          if (Test-Path $zip) { Remove-Item $zip -Force }
+          New-Item -ItemType Directory -Path $stage | Out-Null
+          Copy-Item -Path "$src\*" -Destination $stage -Recurse -Force
+          # Compacta o conteúdo (não a pasta pai), evitando DesktopManager.zip aninhado
+          Compress-Archive -Path "$stage\*" -DestinationPath $zip -Force
+          Remove-Item $stage -Recurse -Force
+          "zip_name=$zip" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          Write-Host "ZIP entries (sample):"
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          [IO.Compression.ZipFile]::OpenRead((Resolve-Path $zip)).Entries |
+            Select-Object -First 15 FullName |
+            ForEach-Object { Write-Host $_.FullName }
+          Get-Item $zip | Format-List FullName, Length
 
       - name: Publish GitHub Release (tags v*)
         if: startsWith(github.ref, 'refs/tags/v')
@@ -89,7 +104,7 @@ jobs:
             Pacote Windows **x64** — **não precisa de Python** no PC destino.
 
             1. Baixe `desktop-manager-windows-x64-${{ steps.meta.outputs.version }}.zip`
-            2. Extraia a pasta
+            2. Extraia (você verá `INSTALAR.cmd` na pasta)
             3. Execute `INSTALAR.cmd`
             4. Configure com `ADMINISTRAR.cmd`
 
@@ -107,6 +122,6 @@ jobs:
             Pacote Windows **x64** — **não precisa de Python** no PC destino.
 
             1. Baixe o arquivo `.zip`
-            2. Extraia a pasta
+            2. Extraia (você verá `INSTALAR.cmd` na pasta)
             3. Execute `INSTALAR.cmd`
             4. Configure com `ADMINISTRAR.cmd`

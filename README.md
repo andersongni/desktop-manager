@@ -16,7 +16,7 @@ O PC destino **não precisa de Python** nem de outros componentes.
 3. Extraia e execute **`INSTALAR.cmd`**
 4. Configure com **`ADMINISTRAR.cmd`**
 
-Também é possível baixar o artifact da [aba Actions](https://github.com/andersongni/desktop-manager/actions) (workflow **Build & Release**).
+Também é possível baixar o artifact da [aba Actions](https://github.com/andersongni/desktop-manager/actions) (workflow **Build & Release**): o download do Actions já vem como um `.zip` com os arquivos do pacote na raiz (não há zip dentro de zip).
 
 ### Publicar uma nova versão
 
