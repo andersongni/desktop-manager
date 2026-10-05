@@ -53,17 +53,6 @@ Ou use **Actions → Build & Release → Run workflow** com `create_release=true
 | `config/settings.json` | Configuração |
 | `assets/wallpaper/` | Imagem de fundo |
 
-## Ambiente de testes (Vagrant)
-
-VM **Windows 11** com **Google Chrome** para validar o app sem mexer no host:
-
-```powershell
-cd test\vagrant
-vagrant up
-```
-
-Detalhes em [`test/README.md`](test/README.md).
-
 ## Desenvolvimento
 
 ### Requisitos (só para desenvolver / gerar o EXE localmente)
@@ -136,7 +125,6 @@ desktop-manager/
 ├── src/                    # núcleo
 ├── admin/admin_gui.py
 ├── scripts/build_release.py
-├── test/vagrant/           # IaC: Windows 11 + Chrome (Vagrant)
 └── .github/workflows/      # CI que gera o ZIP para download
 ```
 
