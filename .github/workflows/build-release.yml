@@ -1,0 +1,112 @@
+name: Build & Release
+
+on:
+  push:
+    branches: [main, master]
+    tags: ["v*"]
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+    inputs:
+      create_release:
+        description: "Publicar GitHub Release com o ZIP (além do artifact)"
+        type: boolean
+        default: false
+      version:
+        description: "Versão do release (ex: 1.0.0) — usado se create_release=true"
+        required: false
+        default: "dev"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build Windows EXE
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install build dependencies
+        run: python -m pip install --upgrade pip && pip install -r requirements-build.txt
+
+      - name: Generate sample wallpaper
+        run: python scripts/make_wallpaper.py
+
+      - name: Build standalone package
+        run: python scripts/build_release.py
+
+      - name: Resolve package version
+        id: meta
+        shell: pwsh
+        run: |
+          if ($env:GITHUB_REF -match '^refs/tags/v(.+)$') {
+            $ver = $Matches[1]
+          } elseif ("${{ github.event_name }}" -eq "workflow_dispatch" -and "${{ inputs.create_release }}" -eq "true") {
+            $ver = "${{ inputs.version }}"
+          } else {
+            $ver = $env:GITHUB_SHA.Substring(0, 7)
+          }
+          "version=$ver" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          Write-Host "Package version: $ver"
+
+      - name: Zip release package
+        id: zip
+        shell: pwsh
+        run: |
+          $ver = "${{ steps.meta.outputs.version }}"
+          $src = "release\DesktopManager"
+          $zip = "desktop-manager-windows-x64-$ver.zip"
+          if (Test-Path $zip) { Remove-Item $zip -Force }
+          Compress-Archive -Path "$src\*" -DestinationPath $zip -Force
+          "zip_name=$zip" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          Get-Item $zip | Format-List FullName, Length
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-manager-windows-x64-${{ steps.meta.outputs.version }}
+          path: ${{ steps.zip.outputs.zip_name }}
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Publish GitHub Release (tags v*)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ steps.zip.outputs.zip_name }}
+          generate_release_notes: true
+          body: |
+            ## Desktop Manager ${{ steps.meta.outputs.version }}
+
+            Pacote Windows **x64** — **não precisa de Python** no PC destino.
+
+            1. Baixe `desktop-manager-windows-x64-${{ steps.meta.outputs.version }}.zip`
+            2. Extraia a pasta
+            3. Execute `INSTALAR.cmd`
+            4. Configure com `ADMINISTRAR.cmd`
+
+      - name: Publish GitHub Release (manual)
+        if: github.event_name == 'workflow_dispatch' && inputs.create_release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ inputs.version }}
+          name: Desktop Manager v${{ inputs.version }}
+          files: ${{ steps.zip.outputs.zip_name }}
+          generate_release_notes: true
+          body: |
+            ## Desktop Manager ${{ inputs.version }}
+
+            Pacote Windows **x64** — **não precisa de Python** no PC destino.
+
+            1. Baixe o arquivo `.zip`
+            2. Extraia a pasta
+            3. Execute `INSTALAR.cmd`
+            4. Configure com `ADMINISTRAR.cmd`

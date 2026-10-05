@@ -1,0 +1,4 @@
+# Desktop Manager — dependências opcionais (stdlib cobre o núcleo)
+# Instale se quiser ícone na bandeja do sistema:
+# pystray>=0.19.5
+# Pillow>=10.0.0

@@ -1,0 +1,22 @@
+__pycache__/
+*.py[cod]
+*.log
+.venv/
+venv/
+logs/
+*.egg-info/
+dist/
+build/
+release/
+.idea/
+.vscode/
+install.json
+*.spec
+desktop-manager-windows-x64-*.zip
+
+# Wallpaper de exemplo é gerado no CI / build local
+assets/wallpaper/*.bmp
+assets/wallpaper/*.jpg
+assets/wallpaper/*.jpeg
+assets/wallpaper/*.png
+!assets/wallpaper/.gitkeep

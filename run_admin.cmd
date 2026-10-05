@@ -1,0 +1,3 @@
+@echo off
+cd /d "%~dp0"
+python -m admin.admin_gui

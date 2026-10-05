@@ -1,0 +1,3 @@
+# Apenas para GERAR o pacote .exe (máquina de desenvolvimento).
+# O PC destino NÃO precisa instalar nada disto.
+pyinstaller>=6.0.0
