@@ -7,7 +7,7 @@ Sobe uma **Windows Server 2022** pequena na Azure para testar o Desktop Manager 
 | Recurso | Detalhe |
 |---------|---------|
 | VM | `Standard_D2s_v4` (fallback se série B sem cota; free trial prefere `Standard_B2ats_v2`) |
-| SO | **Windows 11 Pro 24H2** (Trusted Launch / Gen2) |
+| SO | **Windows 11 Pro 24H2** pt-BR (Trusted Launch / Gen2; Language Pack no bootstrap) |
 | Disco | Standard SSD 128 GB |
 | Rede | VNet + NSG (RDP 3389) + IP público estático |
 | Auto-shutdown | Todo dia às **22:00** (Brasília) com **deallocate** |

@@ -16,6 +16,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from src.actions import run_all  # noqa: E402
+from src.app_icon import apply_window_icon  # noqa: E402
 from src.config import load_settings, save_settings  # noqa: E402
 from src.installer import status  # noqa: E402
 from src.logging_setup import setup_logging  # noqa: E402
@@ -34,6 +35,7 @@ class AdminApp(tk.Tk):
         self.geometry("780x620")
         self.minsize(700, 520)
         self.configure(bg="#1e2430")
+        apply_window_icon(self)
 
         self.settings = load_settings()
         setup_logging(

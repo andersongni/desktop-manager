@@ -1,6 +1,6 @@
-"""Entrada PyInstaller — painel de administração."""
+"""Entrada legada do admin — redireciona para o app unificado."""
 
-from admin.admin_gui import main
+from entry_app import main
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(main(["--admin"]))

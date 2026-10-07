@@ -18,7 +18,7 @@ from typing import Any
 from urllib.parse import urlparse
 
 from .paths import install_dir, project_root
-from .runtime import ADMIN_EXE, AGENT_EXE, SETUP_EXE, is_frozen
+from .runtime import ADMIN_EXE, AGENT_EXE, APP_EXE, SETUP_EXE, is_frozen
 from .version import current_version, is_newer, normalize_version
 
 logger = logging.getLogger(__name__)
@@ -134,10 +134,14 @@ def fetch_latest_release(repo: str = DEFAULT_REPO) -> ReleaseInfo:
     )
 
 
+def _has_app_binary(root: Path) -> bool:
+    return (root / APP_EXE).exists() or (root / AGENT_EXE).exists()
+
+
 def target_install_root() -> Path:
     """Pasta que deve receber a atualização (preferência: instalação LOCALAPPDATA)."""
     installed = install_dir()
-    if (installed / AGENT_EXE).exists():
+    if _has_app_binary(installed):
         return installed
     if is_frozen():
         return project_root()
@@ -145,8 +149,7 @@ def target_install_root() -> Path:
 
 
 def can_apply_update() -> bool:
-    root = target_install_root()
-    return (root / AGENT_EXE).exists()
+    return _has_app_binary(target_install_root())
 
 
 def check_for_update(
@@ -223,13 +226,13 @@ def download_release(release: ReleaseInfo, dest_dir: Path | None = None) -> tupl
     with zipfile.ZipFile(zip_path, "r") as zf:
         _safe_extract(zf, extract_dir)
 
-    if (extract_dir / AGENT_EXE).exists():
-        return extract_dir, staging
-
-    hits = list(extract_dir.rglob(AGENT_EXE))
-    if hits:
-        return hits[0].parent, staging
-    raise RuntimeError(f"Pacote sem {AGENT_EXE}")
+    for name in (APP_EXE, AGENT_EXE):
+        if (extract_dir / name).exists():
+            return extract_dir, staging
+        hits = list(extract_dir.rglob(name))
+        if hits:
+            return hits[0].parent, staging
+    raise RuntimeError(f"Pacote sem {APP_EXE} / {AGENT_EXE}")
 
 
 def _write_apply_script(
@@ -242,12 +245,16 @@ def _write_apply_script(
     script = temp / "dm_apply_update.cmd"
     bak = temp / "dm_settings_bak.json"
     settings_src = install_root / "config" / "settings.json"
-    agent = install_root / AGENT_EXE
+    app = install_root / APP_EXE
+    if not app.exists():
+        app = install_root / AGENT_EXE
+    restart = f'start "" "{app}" --agent --no-actions'
 
     # Copia o pacote; restaura settings; reinicia agente sem reaplicar arrumações
     body = f"""@echo off
 setlocal
 timeout /t 3 /nobreak >nul
+taskkill /F /IM {APP_EXE} >nul 2>&1
 taskkill /F /IM {AGENT_EXE} >nul 2>&1
 taskkill /F /IM {ADMIN_EXE} >nul 2>&1
 taskkill /F /IM {SETUP_EXE} >nul 2>&1
@@ -259,7 +266,7 @@ if exist "{bak}" (
   copy /Y "{bak}" "{settings_src}" >nul
 )
 > "{install_root}\\VERSION" echo {version}
-start "" "{agent}" --no-actions
+{restart}
 timeout /t 2 /nobreak >nul
 rmdir /s /q "{staging_root}" >nul 2>&1
 del "%~f0" >nul 2>&1

@@ -5,9 +5,7 @@ Uso (só na máquina de desenvolvimento):
 
 Saída:
     release/DesktopManager/
-        DesktopManagerAgent.exe
-        DesktopManagerAdmin.exe
-        DesktopManagerSetup.exe
+        DesktopManager.exe   ← instalador/atualizador + agente + admin
         config/
         assets/
         INSTALAR.cmd
@@ -26,6 +24,7 @@ ROOT = Path(__file__).resolve().parent.parent
 RELEASE = ROOT / "release" / "DesktopManager"
 DIST = ROOT / "dist"
 BUILD = ROOT / "build"
+ICON = ROOT / "assets" / "icon" / "app.ico"
 
 
 def package_version() -> str:
@@ -49,16 +48,31 @@ def package_version() -> str:
     return str(__version__).lstrip("vV")
 
 
-def _ensure_pyinstaller() -> None:
+def _ensure_deps() -> None:
     try:
         import PyInstaller  # noqa: F401
     except ImportError:
-        print("Instalando PyInstaller (apenas nesta máquina de build)...")
+        print("Instalando PyInstaller…")
         subprocess.check_call([sys.executable, "-m", "pip", "install", "pyinstaller", "-q"])
+    try:
+        import PIL  # noqa: F401
+    except ImportError:
+        print("Instalando Pillow…")
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "pillow", "-q"])
+
+
+def _ensure_icon() -> Path:
+    if not ICON.exists():
+        print("Gerando ícone…")
+        subprocess.check_call([sys.executable, str(ROOT / "scripts" / "make_icon.py")], cwd=ROOT)
+    if not ICON.exists():
+        raise FileNotFoundError(f"Ícone ausente: {ICON}")
+    return ICON
 
 
 def _build_exe(entry: str, name: str, *, windowed: bool) -> Path:
     """Gera um executável onefile em dist/."""
+    icon = _ensure_icon()
     cmd = [
         sys.executable,
         "-m",
@@ -72,17 +86,20 @@ def _build_exe(entry: str, name: str, *, windowed: bool) -> Path:
         f"--specpath={BUILD}",
         "--paths",
         str(ROOT),
+        f"--icon={icon}",
+        "--add-data",
+        f"{ROOT / 'assets' / 'icon'};assets/icon",
     ]
     if windowed:
         cmd.append("--windowed")
     else:
         cmd.append("--console")
 
-    # Oculta imports que o analisador pode perder
     hidden = [
         "src",
         "src.agent",
         "src.actions",
+        "src.app_icon",
         "src.browser",
         "src.config",
         "src.installer",
@@ -91,12 +108,14 @@ def _build_exe(entry: str, name: str, *, windowed: bool) -> Path:
         "src.paths",
         "src.runtime",
         "src.taskbar",
+        "src.tray",
         "src.wallpaper",
         "src.updater",
         "src.version",
         "admin",
         "admin.admin_gui",
         "admin.setup_wizard",
+        "entry_app",
     ]
     for mod in hidden:
         cmd.extend(["--hidden-import", mod])
@@ -130,16 +149,17 @@ def assemble() -> Path:
                 "Inclua desktop-4x3.jpg e desktop-16x9.jpg em assets/wallpaper/"
             )
 
-    print("Empacotando Agent...")
-    agent = _build_exe("entry_agent.py", "DesktopManagerAgent", windowed=True)
-    print("Empacotando Admin...")
-    admin = _build_exe("entry_admin.py", "DesktopManagerAdmin", windowed=True)
-    print("Empacotando Setup (wizard gráfico)...")
-    setup = _build_exe("entry_setup.py", "DesktopManagerSetup", windowed=True)
+    print("Empacotando DesktopManager.exe (wizard + agente + admin)…")
+    app = _build_exe("entry_app.py", "DesktopManager", windowed=True)
 
-    shutil.copy2(agent, RELEASE / agent.name)
-    shutil.copy2(admin, RELEASE / admin.name)
-    shutil.copy2(setup, RELEASE / setup.name)
+    shutil.copy2(app, RELEASE / app.name)
+    # Compatibilidade com atalhos/scripts antigos
+    for legacy in (
+        "DesktopManagerAgent.exe",
+        "DesktopManagerAdmin.exe",
+        "DesktopManagerSetup.exe",
+    ):
+        shutil.copy2(app, RELEASE / legacy)
 
     (RELEASE / "VERSION").write_text(version + "\n", encoding="utf-8")
     shutil.copytree(ROOT / "config", RELEASE / "config")
@@ -147,19 +167,18 @@ def assemble() -> Path:
     if (ROOT / "README.md").exists():
         shutil.copy2(ROOT / "README.md", RELEASE / "README.md")
 
-    # Atalhos sem janela preta: VBS inicia o wizard windowed
     (RELEASE / "INSTALAR.vbs").write_text(
         'Set sh = CreateObject("WScript.Shell")\r\n'
         'Set fso = CreateObject("Scripting.FileSystemObject")\r\n'
         "dir = fso.GetParentFolderName(WScript.ScriptFullName)\r\n"
-        'sh.Run """" & dir & "\\DesktopManagerSetup.exe"" --wizard install", 1, False\r\n',
+        'sh.Run """" & dir & "\\DesktopManager.exe"" --wizard install", 1, False\r\n',
         encoding="ascii",
     )
     (RELEASE / "DESINSTALAR.vbs").write_text(
         'Set sh = CreateObject("WScript.Shell")\r\n'
         'Set fso = CreateObject("Scripting.FileSystemObject")\r\n'
         "dir = fso.GetParentFolderName(WScript.ScriptFullName)\r\n"
-        'sh.Run """" & dir & "\\DesktopManagerSetup.exe"" --wizard uninstall", 1, False\r\n',
+        'sh.Run """" & dir & "\\DesktopManager.exe"" --wizard uninstall", 1, False\r\n',
         encoding="ascii",
     )
     _write_cmd(
@@ -175,44 +194,53 @@ def assemble() -> Path:
     _write_cmd(
         RELEASE / "ADMINISTRAR.cmd",
         "@echo off\n"
-        "start \"\" \"%~dp0DesktopManagerAdmin.exe\"\n",
+        "start \"\" \"%~dp0DesktopManager.exe\" --admin\n",
+    )
+    _write_cmd(
+        RELEASE / "DesktopManager.cmd",
+        "@echo off\n"
+        "start \"\" \"%~dp0DesktopManager.exe\" %*\n",
     )
     _write_cmd(
         RELEASE / "TESTAR_CONFIG.cmd",
         "@echo off\n"
-        "start \"\" \"%~dp0DesktopManagerAgent.exe\" --trigger manual --once\n",
+        "start \"\" \"%~dp0DesktopManager.exe\" --agent --trigger manual --once\n",
     )
 
     (RELEASE / "LEIA-ME.txt").write_text(
-        "Desktop Manager — pacote portátil\n"
-        "=================================\n\n"
+        "Desktop Manager — executável standalone\n"
+        "======================================\n\n"
         "Este computador NÃO precisa ter Python instalado.\n\n"
-        "1. Copie esta pasta inteira para o PC destino\n"
-        "2. Execute INSTALAR (assistente grafico — sem tela preta)\n"
-        "3. Use ADMINISTRAR para configurar\n\n"
-        "O plano de fundo 4:3 ou 16:9 e escolhido automaticamente pela resolucao da tela.\n\n"
+        "1. Execute DesktopManager.exe (ou INSTALAR)\n"
+        "2. Siga o assistente (wizard) de instalação/atualização\n"
+        "3. O programa fica na área de notificação (bandeja)\n\n"
+        "No ícone da bandeja você pode:\n"
+        "  - Abrir configurações\n"
+        "  - Executar ações agora\n"
+        "  - Verificar atualizações\n"
+        "  - Ligar/desligar inicialização com o Windows\n"
+        "  - Abrir o assistente\n"
+        "  - Encerrar o programa\n\n"
         "Arquivos:\n"
-        "  INSTALAR.vbs / .cmd       - assistente de instalacao\n"
-        "  DESINSTALAR.vbs / .cmd    - assistente de remocao\n"
-        "  ADMINISTRAR.cmd           - painel de configuracao\n"
-        "  TESTAR_CONFIG.cmd         - testa a configuracao (sem arrumar o ambiente)\n"
-        "  DesktopManagerSetup.exe   - wizard (Instalar/Desinstalar)\n"
-        "  DesktopManagerAgent.exe   - agente em segundo plano\n"
-        "  DesktopManagerAdmin.exe   - administracao\n"
-        "  config\\settings.json      - configuracao\n"
-        "  assets\\wallpaper\\         - desktop-4x3.jpg e desktop-16x9.jpg\n"
-        f"  VERSION                   - {version}\n\n"
-        "Apos instalado, o agente verifica releases no GitHub e atualiza sozinho.\n",
+        "  DesktopManager.exe        - app completo (wizard + agente + admin)\n"
+        "  INSTALAR.vbs / .cmd       - atalho para o wizard de instalação\n"
+        "  DESINSTALAR.vbs / .cmd    - atalho para remoção\n"
+        "  ADMINISTRAR.cmd           - painel de configuração\n"
+        "  config\\settings.json      - configuração\n"
+        "  assets\\icon\\              - ícone do aplicativo\n"
+        "  assets\\wallpaper\\         - planos de fundo\n"
+        f"  VERSION                   - {version}\n",
         encoding="utf-8",
     )
 
     print(f"\nPacote pronto (v{version}):\n  {RELEASE}")
-    print("Copie a pasta release\\DesktopManager para o PC sem Python e rode INSTALAR.cmd")
+    print("Execute release\\DesktopManager\\DesktopManager.exe")
     return RELEASE
 
 
 def main() -> int:
-    _ensure_pyinstaller()
+    _ensure_deps()
+    _ensure_icon()
     assemble()
     return 0
 

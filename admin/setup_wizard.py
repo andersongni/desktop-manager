@@ -1,21 +1,25 @@
-"""Assistente gráfico de instalação / desinstalação (sem console)."""
+"""Assistente gráfico de instalação / atualização / desinstalação (sem console)."""
 
 from __future__ import annotations
 
 import io
 import logging
+import subprocess
 import sys
 import threading
-import tkinter as tk
 from contextlib import redirect_stdout
 from pathlib import Path
 from tkinter import messagebox, ttk
+import tkinter as tk
 
 ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from src.app_icon import apply_window_icon  # noqa: E402
 from src.installer import install, status, uninstall  # noqa: E402
+from src.runtime import app_executable, is_frozen  # noqa: E402
+from src.version import current_version  # noqa: E402
 
 
 class _UiLogHandler(logging.Handler):
@@ -34,15 +38,17 @@ class SetupWizard(tk.Tk):
     def __init__(self, initial_mode: str | None = None) -> None:
         super().__init__()
         self.title("Desktop Manager — Assistente")
-        self.geometry("560x420")
-        self.minsize(520, 380)
+        self.geometry("580x460")
+        self.minsize(540, 400)
         self.configure(bg="#f4f6f8")
         self.resizable(False, False)
+        apply_window_icon(self)
 
-        self.mode = initial_mode if initial_mode in ("install", "uninstall") else None
-        # Atalhos INSTALAR/DESINSTALAR já abrem na confirmação
+        self.mode = initial_mode if initial_mode in ("install", "uninstall", "update") else None
+        # Atalhos diretos abrem na confirmação
         self.step = 2 if self.mode else 0
         self._busy = False
+        self._launch_after = True
 
         self._style()
         self._build_shell()
@@ -73,7 +79,7 @@ class SetupWizard(tk.Tk):
         ttk.Label(header, text="Desktop Manager", style="Header.TLabel").pack(anchor="w")
         self.subtitle = ttk.Label(
             header,
-            text="Assistente de instalação",
+            text="Assistente de instalação e atualização",
             background="#1e3a5f",
             foreground="#c5d4e8",
             font=("Segoe UI", 9),
@@ -118,10 +124,10 @@ class SetupWizard(tk.Tk):
         ttk.Label(
             self.card,
             text=(
-                "Este assistente instala ou remove o Desktop Manager neste computador.\n"
-                "Não é necessário ter Python instalado.\n\n"
-                "O software configura plano de fundo, organização da área de trabalho,\n"
-                "navegador e ícones da barra de tarefas."
+                "Este assistente instala, atualiza ou remove o Desktop Manager.\n"
+                "Um único executável standalone — não é necessário ter Python.\n\n"
+                "Após instalar, o programa fica na área de notificação (bandeja),\n"
+                "com atalho para configurações, inicialização com o Windows e sair."
             ),
             style="Muted.TLabel",
             justify="left",
@@ -129,9 +135,9 @@ class SetupWizard(tk.Tk):
 
         info = status()
         status_txt = (
-            f"Situação atual: {'instalado' if info.get('installed') else 'não instalado'}"
-            f"  ·  Startup Run: {'sim' if info.get('run_key') else 'não'}"
-            f"  ·  Tarefas: {len(info.get('tasks') or [])}"
+            f"Versão do pacote: v{current_version()}  ·  "
+            f"Situação: {'instalado' if info.get('installed') else 'não instalado'}"
+            f"  ·  Autostart: {'sim' if info.get('run_key') or info.get('tasks') else 'não'}"
         )
         ttk.Label(self.card, text=status_txt, style="Muted.TLabel").pack(anchor="w", pady=(18, 0))
 
@@ -143,16 +149,31 @@ class SetupWizard(tk.Tk):
         self.subtitle.configure(text="Escolha a ação")
         ttk.Label(self.card, text="O que deseja fazer?", style="Title.TLabel").pack(anchor="w")
 
-        self.action_var = tk.StringVar(value=self.mode or "install")
+        info = status()
+        default = self.mode or ("update" if info.get("installed") else "install")
+        self.action_var = tk.StringVar(value=default)
+
         ttk.Radiobutton(
             self.card,
             text="Instalar o Desktop Manager",
             variable=self.action_var,
             value="install",
-        ).pack(anchor="w", pady=(16, 6))
+        ).pack(anchor="w", pady=(16, 4))
         ttk.Label(
             self.card,
-            text="Copia os arquivos, registra início/desligamento e cria atalhos.",
+            text="Copia os arquivos, registra início com o Windows e cria atalhos.",
+            style="Muted.TLabel",
+        ).pack(anchor="w", padx=(22, 0))
+
+        ttk.Radiobutton(
+            self.card,
+            text="Atualizar / reparar instalação",
+            variable=self.action_var,
+            value="update",
+        ).pack(anchor="w", pady=(12, 4))
+        ttk.Label(
+            self.card,
+            text="Reinstala os arquivos e mantém a configuração (settings.json).",
             style="Muted.TLabel",
         ).pack(anchor="w", padx=(22, 0))
 
@@ -161,7 +182,7 @@ class SetupWizard(tk.Tk):
             text="Desinstalar o Desktop Manager",
             variable=self.action_var,
             value="uninstall",
-        ).pack(anchor="w", pady=(14, 6))
+        ).pack(anchor="w", pady=(12, 4))
         ttk.Label(
             self.card,
             text="Remove tarefas, atalhos e a pasta de instalação.",
@@ -177,20 +198,27 @@ class SetupWizard(tk.Tk):
         mode = self.mode or "install"
         self.subtitle.configure(text="Confirmação")
 
-        if mode == "install":
-            ttk.Label(self.card, text="Confirmar instalação", style="Title.TLabel").pack(anchor="w")
+        if mode in ("install", "update"):
+            title = "Confirmar instalação" if mode == "install" else "Confirmar atualização"
+            ttk.Label(self.card, text=title, style="Title.TLabel").pack(anchor="w")
             ttk.Label(
                 self.card,
                 text=(
-                    "O Desktop Manager será instalado em:\n"
+                    "O Desktop Manager será instalado/atualizado em:\n"
                     "%LOCALAPPDATA%\\DesktopManager\n\n"
-                    "Serão criados atalhos no Menu Iniciar e o agente\n"
-                    "passará a executar no logon (e no desligamento, se possível)."
+                    "Serão criados atalhos no Menu Iniciar e o ícone ficará\n"
+                    "disponível na área de notificação após a conclusão."
                 ),
                 style="Muted.TLabel",
                 justify="left",
             ).pack(anchor="w", pady=(12, 0))
-            self.btn_next.configure(text="Instalar")
+            self._launch_var = tk.BooleanVar(value=True)
+            ttk.Checkbutton(
+                self.card,
+                text="Iniciar o Desktop Manager ao concluir (ícone na bandeja)",
+                variable=self._launch_var,
+            ).pack(anchor="w", pady=(16, 0))
+            self.btn_next.configure(text="Instalar" if mode == "install" else "Atualizar")
         else:
             ttk.Label(self.card, text="Confirmar desinstalação", style="Title.TLabel").pack(anchor="w")
             ttk.Label(
@@ -212,12 +240,14 @@ class SetupWizard(tk.Tk):
 
     def _page_progress(self) -> None:
         mode = self.mode or "install"
-        self.subtitle.configure(text="Instalando…" if mode == "install" else "Removendo…")
-        ttk.Label(
-            self.card,
-            text="Instalando…" if mode == "install" else "Desinstalando…",
-            style="Title.TLabel",
-        ).pack(anchor="w")
+        labels = {
+            "install": ("Instalando…", "Instalando…"),
+            "update": ("Atualizando…", "Atualizando…"),
+            "uninstall": ("Removendo…", "Desinstalando…"),
+        }
+        sub, title = labels.get(mode, ("Processando…", "Processando…"))
+        self.subtitle.configure(text=sub)
+        ttk.Label(self.card, text=title, style="Title.TLabel").pack(anchor="w")
         ttk.Label(
             self.card,
             text="Aguarde. Não feche esta janela.",
@@ -250,13 +280,20 @@ class SetupWizard(tk.Tk):
         mode = self.mode or "install"
         self.subtitle.configure(text="Concluído")
         if ok:
-            title = "Instalação concluída" if mode == "install" else "Desinstalação concluída"
-            detail = (
-                "O Desktop Manager está pronto. Use o atalho no Menu Iniciar\n"
-                "ou execute ADMINISTRAR para configurar."
-                if mode == "install"
-                else "O Desktop Manager foi removido deste computador."
-            )
+            titles = {
+                "install": "Instalação concluída",
+                "update": "Atualização concluída",
+                "uninstall": "Desinstalação concluída",
+            }
+            title = titles.get(mode, "Concluído")
+            if mode in ("install", "update"):
+                detail = (
+                    "O Desktop Manager está pronto.\n"
+                    "Use o ícone na área de notificação (bandeja) para configurar,\n"
+                    "definir a inicialização com o Windows ou encerrar o programa."
+                )
+            else:
+                detail = "O Desktop Manager foi removido deste computador."
         else:
             title = "Algo deu errado"
             detail = "Veja os detalhes abaixo. Você pode fechar e tentar novamente."
@@ -296,6 +333,8 @@ class SetupWizard(tk.Tk):
     def _run_action(self) -> None:
         self._busy = True
         mode = self.mode or "install"
+        if hasattr(self, "_launch_var"):
+            self._launch_after = bool(self._launch_var.get())
         buf = io.StringIO()
         handler = _UiLogHandler(self._append_log)
         handler.setFormatter(logging.Formatter("%(levelname)s | %(message)s"))
@@ -307,7 +346,7 @@ class SetupWizard(tk.Tk):
         ok = False
         try:
             with redirect_stdout(buf):
-                if mode == "install":
+                if mode in ("install", "update"):
                     install(use_tasks=True)
                 else:
                     uninstall()
@@ -325,7 +364,6 @@ class SetupWizard(tk.Tk):
             for line in text.splitlines():
                 self._append_log(line)
 
-        # Captura log da UI
         def finish() -> None:
             if hasattr(self, "progress") and self.progress.winfo_exists():
                 self.progress.stop()
@@ -336,10 +374,34 @@ class SetupWizard(tk.Tk):
                 self._result_log = text
             if not ok:
                 messagebox.showerror("Erro", "A operação não foi concluída. Veja o log no assistente.")
+            elif ok and mode in ("install", "update") and self._launch_after:
+                self._launch_agent()
             self.step = 4
             self._show_step()
 
         self.after(0, finish)
+
+    def _launch_agent(self) -> None:
+        try:
+            from src.paths import install_dir
+
+            root = install_dir() if install_dir().exists() else ROOT
+            if is_frozen() or (root / "DesktopManager.exe").exists():
+                exe = app_executable(root)
+                subprocess.Popen(
+                    [exe, "--agent", "--no-actions"],
+                    cwd=str(root),
+                    close_fds=True,
+                )
+            else:
+                subprocess.Popen(
+                    [sys.executable, str(ROOT / "entry_app.py"), "--agent", "--no-actions"],
+                    cwd=str(ROOT),
+                    close_fds=True,
+                )
+            self._append_log("INFO | Desktop Manager iniciado na bandeja")
+        except OSError as exc:
+            self._append_log(f"WARNING | Não iniciou a bandeja: {exc}")
 
     def _next(self) -> None:
         if self._busy:
@@ -360,7 +422,6 @@ class SetupWizard(tk.Tk):
         if self._busy or self.step <= 0:
             return
         if self.step == 2 and self.mode and not hasattr(self, "action_var"):
-            # Veio de atalho direto: volta ao welcome
             self.mode = None
             self.step = 0
         else:
@@ -379,15 +440,17 @@ def main(argv: list[str] | None = None) -> int:
     mode = None
     if "--wizard" in args:
         idx = args.index("--wizard")
-        if idx + 1 < len(args) and args[idx + 1] in ("install", "uninstall"):
+        if idx + 1 < len(args) and args[idx + 1] in ("install", "uninstall", "update"):
             mode = args[idx + 1]
     if "--install" in args or "install" in args:
-        # Atalho: abrir wizard já na confirmação de instalação
         if "--cli" not in args:
             mode = mode or "install"
     if "--uninstall" in args or "uninstall" in args:
         if "--cli" not in args:
             mode = mode or "uninstall"
+    if "--update" in args or "update" in args:
+        if "--cli" not in args:
+            mode = mode or "update"
 
     app = SetupWizard(initial_mode=mode)
     app.mainloop()

@@ -13,8 +13,8 @@ O PC destino **não precisa de Python** nem de outros componentes.
 
 1. Abra a página de [**Releases**](https://github.com/andersongni/desktop-manager/releases)
 2. Baixe `desktop-manager-windows-x64-*.zip`
-3. Extraia e execute **`INSTALAR`** (assistente gráfico — sem tela preta)
-4. Configure com **`ADMINISTRAR.cmd`**
+3. Extraia e execute **`DesktopManager.exe`** (ou **`INSTALAR`**) — assistente gráfico standalone
+4. Após instalar, o app fica na **área de notificação (bandeja)** com menu de configuração
 
 Também é possível baixar o artifact da [aba Actions](https://github.com/andersongni/desktop-manager/actions) (workflow **Build & Release**): o download do Actions já vem como um `.zip` com os arquivos do pacote na raiz (não há zip dentro de zip).
 
@@ -38,21 +38,22 @@ Ou use **Actions → Build & Release → Run workflow** com `create_release=true
 | **Navegador padrão** | Só no startup/shutdown: instala o Chrome se faltar e define como padrão (confirmação do Windows se necessário) |
 | **Limpar navegação** | Só no startup/shutdown: cache (cookies/histórico opcionais) |
 | **Barra de tarefas** | Só no startup/shutdown: Explorer, Word, Excel, PowerPoint e Chrome |
-| **Segundo plano** | Agente residente no logon + tarefa no evento de desligamento |
-| **Admin / Instalador** | Painel gráfico e scripts de instalação |
-| **Atualização automática** | No logon, consulta GitHub Releases e instala a nova versão sozinha |
+| **Segundo plano** | Agente residente com ícone na bandeja + logon/desligamento |
+| **Wizard standalone** | `DesktopManager.exe` — instalar, atualizar ou remover |
+| **Bandeja** | Configurações, autostart com o Windows, atualizar, encerrar |
+| **Atualização automática** | No logon (e pelo menu), consulta GitHub Releases e atualiza |
 
 ## Conteúdo do pacote ZIP
 
 | Arquivo | Função |
 |---------|--------|
-| `INSTALAR.vbs` / `.cmd` | Assistente gráfico de instalação |
-| `DESINSTALAR.vbs` / `.cmd` | Assistente gráfico de remoção |
-| `DesktopManagerSetup.exe` | Wizard (Instalar / Desinstalar) |
+| `DesktopManager.exe` | App standalone (wizard + agente + admin) |
+| `INSTALAR.vbs` / `.cmd` | Atalho para o wizard de instalação |
+| `DESINSTALAR.vbs` / `.cmd` | Atalho para remoção |
 | `ADMINISTRAR.cmd` | Painel de configuração |
 | `TESTAR_CONFIG.cmd` | Testa a configuração (não aplica arrumações) |
-| `DesktopManager*.exe` | Binários (runtime embutido) |
 | `config/settings.json` | Configuração |
+| `assets/icon/` | Ícone do aplicativo (`app.ico` / `app.png`) |
 | `assets/wallpaper/` | `desktop-4x3.jpg` e `desktop-16x9.jpg` |
 
 ## Teste em VM Azure (free tier)
