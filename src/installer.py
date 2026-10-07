@@ -23,6 +23,7 @@ from .runtime import (
     is_frozen,
     setup_launcher,
 )
+from .version import current_version
 
 logger = logging.getLogger(__name__)
 
@@ -87,14 +88,25 @@ def copy_to_install_dir(source: Path | None = None, dest: Path | None = None) ->
                 shutil.copy2(s, dst / name)
         (dst / "src" / "__init__.py").touch(exist_ok=True)
 
+    version = current_version(src)
+    # Garante VERSION na pasta instalada
+    version_file = dst / "VERSION"
+    if not version_file.exists() or (src / "VERSION").exists():
+        src_ver = src / "VERSION"
+        if src_ver.exists():
+            shutil.copy2(src_ver, version_file)
+        else:
+            version_file.write_text(version + "\n", encoding="utf-8")
+
     meta = {
         "source": str(src),
         "install_dir": str(dst),
         "frozen": has_agent_exe or is_frozen(),
         "executable": sys.executable,
+        "version": version,
     }
     (dst / "install.json").write_text(json.dumps(meta, indent=2), encoding="utf-8")
-    logger.info("Arquivos copiados para %s", dst)
+    logger.info("Arquivos copiados para %s (v%s)", dst, version)
     return dst
 
 
@@ -360,6 +372,7 @@ def status() -> dict:
         "install_dir": str(install_dir()),
         "installed": install_dir().exists(),
         "frozen_package": (install_dir() / AGENT_EXE).exists(),
+        "version": current_version(install_dir() if install_dir().exists() else None),
         "run_key": False,
         "tasks": [],
     }

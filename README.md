@@ -40,6 +40,7 @@ Ou use **Actions → Build & Release → Run workflow** com `create_release=true
 | **Barra de tarefas** | Só no startup/shutdown: Explorer, Word, Excel, PowerPoint e Chrome |
 | **Segundo plano** | Agente residente no logon + tarefa no evento de desligamento |
 | **Admin / Instalador** | Painel gráfico e scripts de instalação |
+| **Atualização automática** | No logon, consulta GitHub Releases e instala a nova versão sozinha |
 
 ## Conteúdo do pacote ZIP
 
@@ -100,6 +101,27 @@ Arquivo: `config/settings.json`
 - `taskbar.replace` — remove pins padrão e deixa só a lista  
 
 - `triggers.on_startup` / `on_shutdown`  
+- `updates.enabled` / `auto_apply` — verificação e instalação automática via GitHub Releases  
+- `updates.check_interval_hours` — intervalo mínimo entre checagens (padrão: 6)  
+- `updates.github_repo` — repositório das releases (`owner/name`)  
+
+## Atualizações automáticas
+
+Depois de instalado, no **logon** o agente:
+
+1. Consulta `https://github.com/andersongni/desktop-manager/releases/latest`
+2. Se houver versão mais nova, baixa o ZIP `desktop-manager-windows-x64-*.zip`
+3. Substitui os arquivos em `%LOCALAPPDATA%\DesktopManager` (preserva `config/settings.json`)
+4. Reinicia o agente
+
+No painel **Administrar → Geral** dá para desligar a verificação, desligar a instalação automática, ou clicar em **Verificar / Atualizar agora**.
+
+Publique uma versão nova com:
+
+```bash
+git tag v1.1.0
+git push origin v1.1.0
+```
 
 ## Como funciona a instalação
 
@@ -126,10 +148,10 @@ desktop-manager/
 ├── entry_*.py              # entradas PyInstaller
 ├── config/settings.json
 ├── assets/wallpaper/
-├── src/                    # núcleo
+├── src/                    # núcleo (+ updater)
 ├── admin/admin_gui.py
 ├── scripts/build_release.py
-└── .github/workflows/      # CI que gera o ZIP para download
+└── .github/workflows/      # CI que gera o ZIP / Release
 ```
 
 ## Licença

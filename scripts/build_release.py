@@ -16,6 +16,7 @@ Saída:
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import sys
@@ -25,6 +26,27 @@ ROOT = Path(__file__).resolve().parent.parent
 RELEASE = ROOT / "release" / "DesktopManager"
 DIST = ROOT / "dist"
 BUILD = ROOT / "build"
+
+
+def package_version() -> str:
+    env = (os.environ.get("DESKTOP_MANAGER_VERSION") or "").strip().lstrip("vV")
+    if env:
+        return env
+    try:
+        out = subprocess.check_output(
+            ["git", "describe", "--tags", "--abbrev=0"],
+            cwd=ROOT,
+            text=True,
+            stderr=subprocess.DEVNULL,
+        ).strip()
+        if out:
+            return out.lstrip("vV")
+    except (subprocess.CalledProcessError, OSError, FileNotFoundError):
+        pass
+    sys.path.insert(0, str(ROOT))
+    from src import __version__
+
+    return str(__version__).lstrip("vV")
 
 
 def _ensure_pyinstaller() -> None:
@@ -70,6 +92,8 @@ def _build_exe(entry: str, name: str, *, windowed: bool) -> Path:
         "src.runtime",
         "src.taskbar",
         "src.wallpaper",
+        "src.updater",
+        "src.version",
         "admin",
         "admin.admin_gui",
         "admin.setup_wizard",
@@ -95,6 +119,9 @@ def assemble() -> Path:
         shutil.rmtree(RELEASE)
     RELEASE.mkdir(parents=True)
 
+    version = package_version()
+    print(f"Versão do pacote: {version}")
+
     for name in ("desktop-4x3.jpg", "desktop-16x9.jpg"):
         img = ROOT / "assets" / "wallpaper" / name
         if not img.exists():
@@ -114,6 +141,7 @@ def assemble() -> Path:
     shutil.copy2(admin, RELEASE / admin.name)
     shutil.copy2(setup, RELEASE / setup.name)
 
+    (RELEASE / "VERSION").write_text(version + "\n", encoding="utf-8")
     shutil.copytree(ROOT / "config", RELEASE / "config")
     shutil.copytree(ROOT / "assets", RELEASE / "assets")
     if (ROOT / "README.md").exists():
@@ -172,11 +200,13 @@ def assemble() -> Path:
         "  DesktopManagerAgent.exe   - agente em segundo plano\n"
         "  DesktopManagerAdmin.exe   - administracao\n"
         "  config\\settings.json      - configuracao\n"
-        "  assets\\wallpaper\\         - desktop-4x3.jpg e desktop-16x9.jpg\n",
+        "  assets\\wallpaper\\         - desktop-4x3.jpg e desktop-16x9.jpg\n"
+        f"  VERSION                   - {version}\n\n"
+        "Apos instalado, o agente verifica releases no GitHub e atualiza sozinho.\n",
         encoding="utf-8",
     )
 
-    print(f"\nPacote pronto:\n  {RELEASE}")
+    print(f"\nPacote pronto (v{version}):\n  {RELEASE}")
     print("Copie a pasta release\\DesktopManager para o PC sem Python e rode INSTALAR.cmd")
     return RELEASE
 

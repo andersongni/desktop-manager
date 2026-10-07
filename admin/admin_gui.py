@@ -21,13 +21,16 @@ from src.installer import status  # noqa: E402
 from src.logging_setup import setup_logging  # noqa: E402
 from src.paths import project_root  # noqa: E402
 from src.taskbar import DEFAULT_PIN_ORDER, resolve_app_path  # noqa: E402
+from src.updater import check_for_update, download_and_apply, maybe_auto_update  # noqa: E402
+from src.version import current_version  # noqa: E402
 from src.wallpaper import classify_aspect, get_primary_screen_size  # noqa: E402
 
 
 class AdminApp(tk.Tk):
     def __init__(self) -> None:
         super().__init__()
-        self.title("Desktop Manager — Administração")
+        self._app_version = current_version()
+        self.title(f"Desktop Manager — Administração (v{self._app_version})")
         self.geometry("780x620")
         self.minsize(700, 520)
         self.configure(bg="#1e2430")
@@ -61,7 +64,11 @@ class AdminApp(tk.Tk):
     def _build(self) -> None:
         header = ttk.Frame(self, padding=16)
         header.pack(fill="x")
-        ttk.Label(header, text="Desktop Manager", style="Header.TLabel").pack(anchor="w")
+        ttk.Label(
+            header,
+            text=f"Desktop Manager  v{self._app_version}",
+            style="Header.TLabel",
+        ).pack(anchor="w")
         ttk.Label(
             header,
             text="Configure ações, instale o agente e execute em segundo plano",
@@ -139,6 +146,32 @@ class AdminApp(tk.Tk):
             style="Muted.TLabel",
             wraplength=640,
         ).pack(anchor="w", pady=(12, 0))
+
+        ttk.Separator(self.tab_general).pack(fill="x", pady=12)
+        ttk.Label(self.tab_general, text="Atualizações (GitHub Releases)").pack(anchor="w")
+        self.var_updates_enabled = tk.BooleanVar()
+        self.var_updates_auto_apply = tk.BooleanVar()
+        ttk.Checkbutton(
+            self.tab_general,
+            text="Verificar novas versões automaticamente",
+            variable=self.var_updates_enabled,
+        ).pack(anchor="w", pady=(8, 0))
+        ttk.Checkbutton(
+            self.tab_general,
+            text="Baixar e instalar atualizações automaticamente",
+            variable=self.var_updates_auto_apply,
+        ).pack(anchor="w")
+        row_up = ttk.Frame(self.tab_general)
+        row_up.pack(fill="x", pady=(8, 0))
+        ttk.Button(row_up, text="Verificar agora", command=self.check_updates).pack(side="left")
+        ttk.Button(row_up, text="Atualizar agora", command=self.apply_updates).pack(side="left", padx=8)
+        self.update_status_var = tk.StringVar(value="")
+        ttk.Label(
+            self.tab_general,
+            textvariable=self.update_status_var,
+            style="Muted.TLabel",
+            wraplength=640,
+        ).pack(anchor="w", pady=(8, 0))
 
     def _build_wallpaper(self) -> None:
         self.var_wp_enabled = tk.BooleanVar()
@@ -343,6 +376,10 @@ class AdminApp(tk.Tk):
         self.var_on_startup.set(s.get("triggers", {}).get("on_startup", True))
         self.var_on_shutdown.set(s.get("triggers", {}).get("on_shutdown", True))
 
+        up = s.get("updates", {})
+        self.var_updates_enabled.set(up.get("enabled", True))
+        self.var_updates_auto_apply.set(up.get("auto_apply", True))
+
         wp = s.get("wallpaper", {})
         self.var_wp_enabled.set(wp.get("enabled", True))
         self.var_wp_auto.set(wp.get("auto_aspect", True))
@@ -378,6 +415,12 @@ class AdminApp(tk.Tk):
         s.setdefault("triggers", {})
         s["triggers"]["on_startup"] = self.var_on_startup.get()
         s["triggers"]["on_shutdown"] = self.var_on_shutdown.get()
+
+        s.setdefault("updates", {})
+        s["updates"]["enabled"] = self.var_updates_enabled.get()
+        s["updates"]["auto_apply"] = self.var_updates_auto_apply.get()
+        s["updates"].setdefault("check_interval_hours", 6)
+        s["updates"].setdefault("github_repo", "andersongni/desktop-manager")
 
         s.setdefault("wallpaper", {})
         s["wallpaper"]["enabled"] = self.var_wp_enabled.get()
@@ -491,12 +534,83 @@ class AdminApp(tk.Tk):
     def _refresh_status(self) -> None:
         info = status()
         self.status_var.set(
+            f"v{info.get('version', self._app_version)} | "
             f"Instalado: {'sim' if info['installed'] else 'não'} | "
             f"Run: {'sim' if info['run_key'] else 'não'} | "
             f"Tarefas: {', '.join(info['tasks']) or 'nenhuma'}"
         )
         self.install_info.delete("1.0", "end")
         self.install_info.insert("end", json.dumps(info, indent=2, ensure_ascii=False))
+
+    def check_updates(self) -> None:
+        self.settings = self._form_to_settings()
+        save_settings(self.settings)
+        self.update_status_var.set("Consultando GitHub…")
+
+        def work() -> None:
+            result = check_for_update(self.settings, force=True)
+            msg = (
+                f"{result.status}: local {result.local_version}"
+                + (f" → remota {result.remote_version}" if result.remote_version else "")
+                + (f" — {result.detail}" if result.detail else "")
+            )
+
+            def done() -> None:
+                self.update_status_var.set(msg)
+                self._log(msg)
+                if result.status == "available":
+                    messagebox.showinfo(
+                        "Atualização",
+                        f"Nova versão {result.remote_version} disponível "
+                        f"(atual: {result.local_version}).\n"
+                        "Use «Atualizar agora» ou aguarde o próximo logon.",
+                    )
+                elif result.status == "up_to_date":
+                    messagebox.showinfo("Atualização", "Você já está na versão mais recente.")
+                elif result.status == "error":
+                    messagebox.showerror("Atualização", result.detail or "Falha ao verificar")
+
+            self.after(0, done)
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def apply_updates(self) -> None:
+        self.settings = self._form_to_settings()
+        save_settings(self.settings)
+        if not messagebox.askyesno(
+            "Atualizar",
+            "Baixar a versão mais recente do GitHub e instalar agora?\n"
+            "O agente será reiniciado. Sua configuração será preservada.",
+        ):
+            return
+        self.update_status_var.set("Baixando atualização…")
+
+        def work() -> None:
+            result = maybe_auto_update(self.settings, force=True)
+            if result.status == "available" and result.release is not None:
+                result = download_and_apply(result.release)
+            msg = f"{result.status}: {result.detail}"
+
+            def done() -> None:
+                self.update_status_var.set(msg)
+                self._log(msg)
+                if result.status == "scheduled":
+                    messagebox.showinfo(
+                        "Atualização",
+                        f"Versão {result.remote_version} baixada.\n"
+                        "A aplicação será reiniciada em instantes.",
+                    )
+                    self.after(800, self.destroy)
+                elif result.status == "up_to_date":
+                    messagebox.showinfo("Atualização", "Nada a atualizar.")
+                elif result.status == "skipped":
+                    messagebox.showwarning("Atualização", result.detail or "Atualização ignorada")
+                else:
+                    messagebox.showerror("Atualização", result.detail or "Falha")
+
+            self.after(0, done)
+
+        threading.Thread(target=work, daemon=True).start()
 
     def _open_project(self) -> None:
         subprocess.Popen(["explorer", str(project_root())])

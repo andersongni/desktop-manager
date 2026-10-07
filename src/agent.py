@@ -161,18 +161,49 @@ def _message_loop() -> None:
         user32.DispatchMessageW(ctypes.byref(msg))
 
 
-def run_agent(once: bool = False, trigger: str = "startup") -> int:
+def run_agent(
+    once: bool = False,
+    trigger: str = "startup",
+    *,
+    no_actions: bool = False,
+) -> int:
     global _settings
     _settings = load_settings()
     log_cfg = _settings.get("logging", {})
     setup_logging(log_cfg.get("level", "INFO"), log_cfg.get("keep_days", 30))
 
-    logger.info("Desktop Manager Agent iniciando (once=%s, trigger=%s)", once, trigger)
+    logger.info(
+        "Desktop Manager Agent iniciando (once=%s, trigger=%s, no_actions=%s)",
+        once,
+        trigger,
+        no_actions,
+    )
 
-    if trigger == "startup" and _settings.get("triggers", {}).get("on_startup", True):
-        run_all(_settings, trigger="startup")
-    elif trigger in ("shutdown", "manual"):
-        run_all(_settings, trigger=trigger)
+    # Auto-update no logon (antes das arrumações). Se agendado, encerra para trocar os EXEs.
+    if trigger == "startup" and not no_actions:
+        try:
+            from .updater import maybe_auto_update
+            from .version import current_version
+
+            result = maybe_auto_update(_settings)
+            logger.info(
+                "Update check: %s (local=%s remote=%s) %s",
+                result.status,
+                result.local_version or current_version(),
+                result.remote_version or "-",
+                result.detail,
+            )
+            if result.status == "scheduled":
+                logger.info("Saindo para aplicar atualização…")
+                return 0
+        except Exception:  # noqa: BLE001
+            logger.exception("Falha no verificador de atualizações")
+
+    if not no_actions:
+        if trigger == "startup" and _settings.get("triggers", {}).get("on_startup", True):
+            run_all(_settings, trigger="startup")
+        elif trigger in ("shutdown", "manual"):
+            run_all(_settings, trigger=trigger)
 
     if once:
         return 0
@@ -201,8 +232,13 @@ def main(argv: list[str] | None = None) -> int:
         default="startup",
         help="Qual fluxo executar",
     )
+    parser.add_argument(
+        "--no-actions",
+        action="store_true",
+        help="Só fica residente (pós-atualização; não reexecuta arrumações)",
+    )
     args = parser.parse_args(argv)
-    return run_agent(once=args.once, trigger=args.trigger)
+    return run_agent(once=args.once, trigger=args.trigger, no_actions=args.no_actions)
 
 
 if __name__ == "__main__":

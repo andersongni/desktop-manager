@@ -65,6 +65,12 @@ DEFAULT_SETTINGS: dict[str, Any] = {
         "on_startup": True,
         "on_shutdown": True,
     },
+    "updates": {
+        "enabled": True,
+        "auto_apply": True,
+        "check_interval_hours": 6,
+        "github_repo": "andersongni/desktop-manager",
+    },
     "logging": {
         "level": "INFO",
         "keep_days": 30,

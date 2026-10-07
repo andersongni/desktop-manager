@@ -49,9 +49,6 @@ jobs:
             Write-Host "OK $f"
           }
 
-      - name: Build standalone package
-        run: python scripts/build_release.py
-
       - name: Resolve package version
         id: meta
         shell: pwsh
@@ -65,6 +62,11 @@ jobs:
           }
           "version=$ver" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
           Write-Host "Package version: $ver"
+
+      - name: Build standalone package
+        env:
+          DESKTOP_MANAGER_VERSION: ${{ steps.meta.outputs.version }}
+        run: python scripts/build_release.py
 
       # Artifact: envia a PASTA (não um .zip). O download do Actions já compacta;
       # se enviarmos um .zip, o usuário recebe zip-dentro-de-zip.

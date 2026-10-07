@@ -41,6 +41,12 @@
     "on_startup": true,
     "on_shutdown": true
   },
+  "updates": {
+    "enabled": true,
+    "auto_apply": true,
+    "check_interval_hours": 6,
+    "github_repo": "andersongni/desktop-manager"
+  },
   "logging": {
     "level": "INFO",
     "keep_days": 30

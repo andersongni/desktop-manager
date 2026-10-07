@@ -69,6 +69,7 @@ def distribution_files(root: Path | None = None) -> list[str]:
         AGENT_EXE,
         ADMIN_EXE,
         SETUP_EXE,
+        "VERSION",
         "config",
         "assets",
         "README.md",
