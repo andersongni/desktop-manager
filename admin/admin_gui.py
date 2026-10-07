@@ -268,6 +268,7 @@ class AdminApp(tk.Tk):
         ).pack(anchor="w", pady=(8, 0))
 
     def _build_browser(self) -> None:
+        self.var_ensure_installed = tk.BooleanVar()
         self.var_set_default = tk.BooleanVar()
         self.var_default_browser = tk.StringVar()
         self.var_clear_enabled = tk.BooleanVar()
@@ -277,9 +278,14 @@ class AdminApp(tk.Tk):
 
         ttk.Checkbutton(
             self.tab_browser,
-            text="Solicitar definição do navegador padrão (abre Configurações do Windows)",
-            variable=self.var_set_default,
+            text="Instalar Google Chrome automaticamente se não estiver presente",
+            variable=self.var_ensure_installed,
         ).pack(anchor="w")
+        ttk.Checkbutton(
+            self.tab_browser,
+            text="Definir como navegador padrão (abre Configurações do Windows se necessário)",
+            variable=self.var_set_default,
+        ).pack(anchor="w", pady=(4, 0))
         row = ttk.Frame(self.tab_browser)
         row.pack(fill="x", pady=6)
         ttk.Label(row, text="Navegador:").pack(side="left")
@@ -290,6 +296,17 @@ class AdminApp(tk.Tk):
             width=14,
             state="readonly",
         ).pack(side="left", padx=8)
+        ttk.Label(
+            self.tab_browser,
+            text=(
+                "Se o Chrome não estiver instalado, o Desktop Manager baixa o instalador "
+                "oficial e conclui a instalação em modo silencioso no início/desligamento "
+                "da sessão. No Windows 10/11 a confirmação final do navegador padrão "
+                "pode exigir um clique nas Configurações."
+            ),
+            style="Muted.TLabel",
+            wraplength=640,
+        ).pack(anchor="w", pady=(0, 4))
         ttk.Separator(self.tab_browser).pack(fill="x", pady=12)
         ttk.Checkbutton(
             self.tab_browser, text="Limpar dados de navegação", variable=self.var_clear_enabled
@@ -394,7 +411,8 @@ class AdminApp(tk.Tk):
         self.var_remove_other_shortcuts.set(org.get("remove_other_shortcuts", True))
 
         br = s.get("browser", {})
-        self.var_set_default.set(br.get("set_default", False))
+        self.var_ensure_installed.set(br.get("ensure_installed", True))
+        self.var_set_default.set(br.get("set_default", True))
         self.var_default_browser.set(br.get("default_browser", "chrome"))
         cd = br.get("clear_data", {})
         self.var_clear_enabled.set(cd.get("enabled", True))
@@ -436,6 +454,7 @@ class AdminApp(tk.Tk):
         s["organize_desktop"]["keep_shortcuts"] = ["word", "excel", "powerpoint", "chrome"]
 
         s.setdefault("browser", {})
+        s["browser"]["ensure_installed"] = self.var_ensure_installed.get()
         s["browser"]["set_default"] = self.var_set_default.get()
         s["browser"]["default_browser"] = self.var_default_browser.get()
         s["browser"].setdefault("clear_data", {})

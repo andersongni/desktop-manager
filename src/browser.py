@@ -6,11 +6,19 @@ import logging
 import os
 import shutil
 import subprocess
+import tempfile
+import time
+import urllib.error
+import urllib.request
 import winreg
 from pathlib import Path
 from typing import Any
 
 logger = logging.getLogger(__name__)
+
+CHROME_INSTALLER_URL = "https://dl.google.com/chrome/install/latest/chrome_installer.exe"
+CHROME_INSTALL_TIMEOUT_SEC = 600
+USER_AGENT = "DesktopManager-ChromeInstaller"
 
 BROWSER_EXES: dict[str, list[str]] = {
     "chrome": [
@@ -108,27 +116,149 @@ def find_browser_exe(name: str) -> Path | None:
     return None
 
 
-def set_default_browser(name: str, open_settings: bool = True) -> dict[str, Any]:
+def is_browser_installed(name: str) -> bool:
+    return find_browser_exe(name) is not None
+
+
+def ensure_browser_installed(name: str = "chrome") -> dict[str, Any]:
+    """Garante que o navegador esteja instalado; instala o Chrome se faltar."""
+    name = name.lower()
+    exe = find_browser_exe(name)
+    if exe is not None:
+        logger.info("%s já instalado: %s", _display_name(name), exe)
+        return {
+            "browser": name,
+            "status": "already_installed",
+            "exe": str(exe),
+            "installed_now": False,
+        }
+
+    if name != "chrome":
+        raise FileNotFoundError(
+            f"Navegador '{name}' não encontrado e instalação automática só é "
+            "suportada para o Google Chrome"
+        )
+
+    logger.info("Google Chrome não encontrado — iniciando instalação silenciosa")
+    return install_chrome()
+
+
+def install_chrome(timeout_seconds: int = CHROME_INSTALL_TIMEOUT_SEC) -> dict[str, Any]:
+    """Baixa o instalador oficial e instala o Google Chrome em modo silencioso."""
+    result: dict[str, Any] = {
+        "browser": "chrome",
+        "status": "error",
+        "installed_now": False,
+        "exe": None,
+    }
+    installer = Path(tempfile.gettempdir()) / "dm_chrome_installer.exe"
+    try:
+        logger.info("Baixando instalador do Chrome: %s", CHROME_INSTALLER_URL)
+        req = urllib.request.Request(
+            CHROME_INSTALLER_URL,
+            headers={"User-Agent": USER_AGENT},
+        )
+        with urllib.request.urlopen(req, timeout=120) as resp, installer.open("wb") as fh:
+            shutil.copyfileobj(resp, fh)
+
+        if not installer.exists() or installer.stat().st_size < 1024:
+            raise RuntimeError("Download do instalador do Chrome falhou ou arquivo inválido")
+
+        logger.info("Executando instalação silenciosa do Chrome (%s)", installer)
+        creationflags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
+        proc = subprocess.run(
+            [str(installer), "/silent", "/install"],
+            capture_output=True,
+            text=True,
+            timeout=timeout_seconds,
+            creationflags=creationflags,
+        )
+        if proc.returncode not in (0, None):
+            logger.warning(
+                "Instalador do Chrome retornou código %s", proc.returncode
+            )
+
+        exe = _wait_for_browser_exe("chrome", attempts=30, delay_sec=2.0)
+        if exe is None:
+            raise RuntimeError(
+                "Chrome não foi detectado após a instalação "
+                f"(exit={proc.returncode})"
+            )
+
+        result.update(
+            {
+                "status": "installed",
+                "installed_now": True,
+                "exe": str(exe),
+                "exit_code": proc.returncode,
+            }
+        )
+        logger.info("Google Chrome instalado: %s", exe)
+        return result
+    except (urllib.error.URLError, OSError, RuntimeError, subprocess.TimeoutExpired) as exc:
+        logger.exception("Falha ao instalar o Google Chrome")
+        result["detail"] = str(exc)
+        raise RuntimeError(f"Falha ao instalar o Google Chrome: {exc}") from exc
+    finally:
+        try:
+            installer.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+
+def set_default_browser(
+    name: str,
+    open_settings: bool = True,
+    install_if_missing: bool = False,
+) -> dict[str, Any]:
     """Tenta preparar o navegador padrão.
 
     No Windows 10/11 a escolha definitiva exige confirmação do usuário
     nas Configurações. Este método:
-      1. Localiza o executável
-      2. Registra App Paths (quando possível)
-      3. Abre a tela de apps padrão para o usuário confirmar
+      1. Garante instalação (Chrome) quando solicitado
+      2. Localiza o executável
+      3. Solicita ao Chrome tornar-se padrão (quando aplicável)
+      4. Abre a tela de apps padrão para o usuário confirmar
     """
     name = name.lower()
+    install_report: dict[str, Any] | None = None
+    if install_if_missing:
+        install_report = ensure_browser_installed(name)
+
     exe = find_browser_exe(name)
     if exe is None:
         raise FileNotFoundError(f"Navegador '{name}' não encontrado neste computador")
 
-    result: dict[str, Any] = {"browser": name, "exe": str(exe), "settings_opened": False}
+    result: dict[str, Any] = {
+        "browser": name,
+        "exe": str(exe),
+        "settings_opened": False,
+        "make_default_requested": False,
+    }
+    if install_report is not None:
+        result["install"] = install_report
+
+    if name == "chrome":
+        try:
+            creationflags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
+            subprocess.run(
+                [str(exe), "--make-default-browser"],
+                capture_output=True,
+                text=True,
+                timeout=30,
+                creationflags=creationflags,
+            )
+            result["make_default_requested"] = True
+            logger.info("Solicitado ao Chrome tornar-se navegador padrão")
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            logger.debug("chrome --make-default-browser: %s", exc)
 
     # Abre a UI oficial — única forma confiável e suportada no Win10/11
     if open_settings:
+        settings_uri = _default_apps_uri(name)
         try:
             subprocess.Popen(
-                ["cmd", "/c", "start", "ms-settings:defaultapps"],
+                ["cmd", "/c", "start", "", settings_uri],
                 shell=False,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
@@ -152,6 +282,28 @@ def set_default_browser(name: str, open_settings: bool = True) -> dict[str, Any]
         logger.debug("Registro de preferência: %s", exc)
 
     return result
+
+
+def _wait_for_browser_exe(
+    name: str, attempts: int = 20, delay_sec: float = 1.5
+) -> Path | None:
+    for _ in range(attempts):
+        exe = find_browser_exe(name)
+        if exe is not None:
+            return exe
+        time.sleep(delay_sec)
+    return None
+
+
+def _default_apps_uri(name: str) -> str:
+    # Deep link ajuda a ir direto ao app quando o Windows reconhecer o registro.
+    mapping = {
+        "chrome": "ms-settings:defaultapps?registeredAppUser=Google%20Chrome",
+        "edge": "ms-settings:defaultapps?registeredAppMachine=Microsoft%20Edge",
+        "firefox": "ms-settings:defaultapps?registeredAppUser=Firefox",
+        "brave": "ms-settings:defaultapps?registeredAppUser=Brave",
+    }
+    return mapping.get(name, "ms-settings:defaultapps")
 
 
 def clear_browsing_data(settings: dict[str, Any]) -> list[dict[str, str]]:

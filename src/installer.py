@@ -309,6 +309,7 @@ def install(use_tasks: bool = True) -> Path:
         register_startup_run_key(root)
 
     create_shortcuts(root)
+    _ensure_chrome_after_install()
     info = status()
     logger.info("Instalação concluída em %s", root)
     print(f"\nDesktop Manager instalado em:\n  {root}")
@@ -365,6 +366,34 @@ def uninstall() -> None:
             shutil.rmtree(dst, ignore_errors=True)
             print(f"Removido: {dst}")
     print("Desktop Manager desinstalado.")
+
+
+def _ensure_chrome_after_install() -> None:
+    """Instala o Chrome e prepara como padrão, conforme config."""
+    try:
+        from .browser import ensure_browser_installed, set_default_browser
+        from .config import load_settings
+
+        settings = load_settings()
+        br = settings.get("browser", {})
+        ensure = bool(br.get("ensure_installed", True))
+        set_default = bool(br.get("set_default", True))
+        name = str(br.get("default_browser", "chrome")).lower()
+
+        if not ensure and not set_default:
+            return
+
+        if set_default:
+            result = set_default_browser(
+                name,
+                open_settings=True,
+                install_if_missing=ensure,
+            )
+        else:
+            result = ensure_browser_installed(name)
+        logger.info("Navegador na instalação: %s", result)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Não foi possível garantir o Chrome na instalação: %s", exc)
 
 
 def status() -> dict:

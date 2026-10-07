@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from .browser import clear_browsing_data, set_default_browser
+from .browser import clear_browsing_data, ensure_browser_installed, set_default_browser
 from .organizer import organize_desktop
 from .taskbar import apply_taskbar_actions
 from .wallpaper import apply_wallpaper_from_settings, get_primary_screen_size
@@ -97,16 +97,41 @@ def run_all(settings: dict[str, Any], trigger: str = "manual") -> dict[str, Any]
                     {"step": "organize_desktop", "status": "error", "detail": str(exc)}
                 )
 
-    # Navegador
+    # Navegador (instalar se faltar + definir como padrão)
     br = settings.get("browser", {})
-    if br.get("set_default"):
+    default_browser = str(br.get("default_browser", "chrome")).lower()
+    ensure_installed = bool(br.get("ensure_installed", True))
+    set_default = bool(br.get("set_default", True))
+
+    if ensure_installed and not set_default:
+        if not session_edge:
+            report["steps"].append(
+                {"step": "ensure_browser", "status": "skipped", "detail": SKIP_DETAIL}
+            )
+        else:
+            try:
+                result = ensure_browser_installed(default_browser)
+                report["steps"].append(
+                    {"step": "ensure_browser", "status": "ok", "detail": result}
+                )
+            except Exception as exc:  # noqa: BLE001
+                logger.exception("Garantia de instalação do navegador falhou")
+                report["ok"] = False
+                report["steps"].append(
+                    {"step": "ensure_browser", "status": "error", "detail": str(exc)}
+                )
+
+    if set_default:
         if not session_edge:
             report["steps"].append(
                 {"step": "default_browser", "status": "skipped", "detail": SKIP_DETAIL}
             )
         else:
             try:
-                result = set_default_browser(br.get("default_browser", "chrome"))
+                result = set_default_browser(
+                    default_browser,
+                    install_if_missing=ensure_installed,
+                )
                 report["steps"].append(
                     {"step": "default_browser", "status": "ok", "detail": result}
                 )

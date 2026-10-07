@@ -18,3 +18,6 @@ desktop-manager-windows-x64-*.zip
 assets/wallpaper/*.bmp
 assets/wallpaper/desktop.jpg
 assets/wallpaper/desktop.jpeg
+
+# Saída do `az bicep build`
+infra/azure/main.json

@@ -35,7 +35,7 @@ Ou use **Actions → Build & Release → Run workflow** com `create_release=true
 |--------|-----------|
 | **Plano de fundo** | Só no startup/shutdown: wallpaper 4:3 ou 16:9 conforme a tela |
 | **Organizar arquivos** | Só no startup/shutdown: atalhos Word/Excel/PowerPoint/Chrome; move arquivos por tipo |
-| **Navegador padrão** | Só no startup/shutdown: abre Configurações do Windows para confirmar |
+| **Navegador padrão** | Só no startup/shutdown: instala o Chrome se faltar e define como padrão (confirmação do Windows se necessário) |
 | **Limpar navegação** | Só no startup/shutdown: cache (cookies/histórico opcionais) |
 | **Barra de tarefas** | Só no startup/shutdown: Explorer, Word, Excel, PowerPoint e Chrome |
 | **Segundo plano** | Agente residente no logon + tarefa no evento de desligamento |
@@ -54,6 +54,17 @@ Ou use **Actions → Build & Release → Run workflow** com `create_release=true
 | `DesktopManager*.exe` | Binários (runtime embutido) |
 | `config/settings.json` | Configuração |
 | `assets/wallpaper/` | `desktop-4x3.jpg` e `desktop-16x9.jpg` |
+
+## Teste em VM Azure (free tier)
+
+IaC em Bicep para subir uma VM Windows 11 Pro e testar instalação / startup / auto-update:
+
+```powershell
+cd infra\azure
+.\deploy.ps1
+```
+
+Detalhes, SKUs free e destroy: [`infra/azure/README.md`](infra/azure/README.md).
 
 ## Desenvolvimento
 
@@ -95,6 +106,7 @@ Arquivo: `config/settings.json`
 - `wallpaper.image_4x3` / `image_16x9` — imagens padrão da marca  
 - `wallpaper.image` — override manual (se `auto_aspect` for false)  
 - `organize_desktop.rules` — pasta → extensões  
+- `browser.ensure_installed` — instala o Chrome automaticamente se não estiver presente  
 - `browser.set_default` / `default_browser` — chrome, edge, firefox, brave  
 - `browser.clear_data` — cache / cookies / histórico  
 - `taskbar.pins` — ordem: `explorer`, `word`, `excel`, `powerpoint`, `chrome`  

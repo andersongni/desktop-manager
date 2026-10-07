@@ -22,7 +22,8 @@
     "create_subfolder_by_date": false
   },
   "browser": {
-    "set_default": false,
+    "ensure_installed": true,
+    "set_default": true,
     "default_browser": "chrome",
     "clear_data": {
       "enabled": true,

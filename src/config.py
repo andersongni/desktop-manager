@@ -46,7 +46,8 @@ DEFAULT_SETTINGS: dict[str, Any] = {
         "create_subfolder_by_date": False,
     },
     "browser": {
-        "set_default": False,
+        "ensure_installed": True,
+        "set_default": True,
         "default_browser": "chrome",
         "clear_data": {
             "enabled": True,
