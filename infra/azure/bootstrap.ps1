@@ -1,5 +1,18 @@
 # Bootstrap da VM de teste — baixado/inline pela Custom Script Extension (roda como SYSTEM).
+[CmdletBinding()]
+param(
+  [string]$AdminUsername = '',
+  [string]$AdminPassword = ''
+)
+
 $ErrorActionPreference = 'Stop'
+
+if (-not $AdminUsername) { $AdminUsername = $env:DM_ADMIN_USERNAME }
+if (-not $AdminPassword) { $AdminPassword = $env:DM_ADMIN_PASSWORD }
+if (-not $AdminPassword -and $env:DM_ADMIN_PASSWORD_B64) {
+  $AdminPassword = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($env:DM_ADMIN_PASSWORD_B64))
+}
+if (-not $AdminUsername) { $AdminUsername = 'dmadmin' }
 
 function Set-LocalePtBr {
   Write-Host 'Configurando idioma Português (Brasil)...'
@@ -27,7 +40,6 @@ function Set-LocalePtBr {
   } catch { Write-Warning "UserLanguageList: $_" }
   try { Set-Culture -CultureInfo pt-BR } catch { Write-Warning "Culture: $_" }
 
-  # Default user (novos logons)
   $defaultHive = 'HKLM\TempDefaultUser'
   $ntuser = 'C:\Users\Default\NTUSER.DAT'
   if (Test-Path $ntuser) {
@@ -43,7 +55,54 @@ function Set-LocalePtBr {
   Write-Host 'Locale pt-BR aplicado (reinício recomendado para UI completa).'
 }
 
+function Enable-LocalAutoLogon {
+  param(
+    [Parameter(Mandatory)][string]$Username,
+    [Parameter(Mandatory)][string]$Password
+  )
+
+  Write-Host "Configurando conta local '$Username' com logon automático (sem prompt de senha)..."
+
+  try {
+    $user = Get-LocalUser -Name $Username -ErrorAction Stop
+    Set-LocalUser -Name $Username -PasswordNeverExpires $true -ErrorAction SilentlyContinue
+    if ($user.Enabled -ne $true) {
+      Enable-LocalUser -Name $Username -ErrorAction SilentlyContinue
+    }
+  } catch {
+    Write-Warning "LocalUser '$Username': $_"
+  }
+
+  # Não exigir CTRL+ALT+DEL nem prompt extra de senha no RDP
+  $winlogon = 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon'
+  New-ItemProperty -Path $winlogon -Name AutoAdminLogon -PropertyType String -Value '1' -Force | Out-Null
+  New-ItemProperty -Path $winlogon -Name DefaultUserName -PropertyType String -Value $Username -Force | Out-Null
+  New-ItemProperty -Path $winlogon -Name DefaultPassword -PropertyType String -Value $Password -Force | Out-Null
+  New-ItemProperty -Path $winlogon -Name DefaultDomainName -PropertyType String -Value $env:COMPUTERNAME -Force | Out-Null
+  New-ItemProperty -Path $winlogon -Name AutoLogonCount -PropertyType String -Value '999' -Force | Out-Null
+  New-ItemProperty -Path $winlogon -Name DisableCAD -PropertyType DWord -Value 1 -Force | Out-Null
+
+  $rdpTcp = 'HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp'
+  if (Test-Path $rdpTcp) {
+    New-ItemProperty -Path $rdpTcp -Name fPromptForPassword -PropertyType DWord -Value 0 -Force | Out-Null
+  }
+
+  # Política: permitir credenciais salvas do cliente RDP
+  $ts = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services'
+  if (-not (Test-Path $ts)) { New-Item -Path $ts -Force | Out-Null }
+  New-ItemProperty -Path $ts -Name fPromptForPassword -PropertyType DWord -Value 0 -Force | Out-Null
+  New-ItemProperty -Path $ts -Name fDisablePasswordSaving -PropertyType DWord -Value 0 -Force | Out-Null
+
+  Write-Host 'Auto-logon local habilitado.'
+}
+
 Set-LocalePtBr
+
+if ($AdminPassword) {
+  Enable-LocalAutoLogon -Username $AdminUsername -Password $AdminPassword
+} else {
+  Write-Warning 'DM_ADMIN_PASSWORD ausente — auto-logon não configurado.'
+}
 
 $repo = $env:DM_GITHUB_REPO
 if (-not $repo) { $repo = 'andersongni/desktop-manager' }
@@ -71,13 +130,14 @@ Desktop Manager — teste na Azure (Windows 11 pt-BR)
 ===================================================
 Release: $($rel.tag_name)
 Pasta:   $dest
+Conta:   $AdminUsername (local, auto-logon)
 
 1. Abra C:\DesktopManager-release
 2. Execute INSTALAR.cmd (ou INSTALAR.vbs)
 3. Use ADMINISTRAR.cmd para configurar
 4. Reinicie a sessao / VM para testar startup e auto-update
 
-Idioma do sistema: Português (Brasil). Se a UI ainda estiver em inglês, reinicie a VM.
+Idioma: Português (Brasil). Conta local com logon automático (sem pedir senha na tela de login).
 "@
 Set-Content -Path (Join-Path $publicDesk 'LER-DesktopManager.txt') -Value $note -Encoding UTF8
 

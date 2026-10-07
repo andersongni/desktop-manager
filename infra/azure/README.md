@@ -44,6 +44,8 @@ cd infra\azure
 .\deploy.ps1
 ```
 
+O deploy **não pede senha**: gera conta local (`dmadmin`), aplica auto-logon na VM, registra a credencial no Credential Manager do seu PC e abre o RDP sem prompt. Use `-OpenRdp:$false` para não abrir o cliente.
+
 Opções:
 
 ```powershell

@@ -21,3 +21,5 @@ assets/wallpaper/desktop.jpeg
 
 # Saída do `az bicep build`
 infra/azure/main.json
+# Atalhos RDP gerados pelo deploy (IP local da VM)
+infra/azure/*.rdp

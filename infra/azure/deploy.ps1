@@ -17,8 +17,12 @@ param(
   [string]$VmSize = 'Standard_D2s_v4',
   [string]$AllowedRdpSource = '',
   [string]$AutoShutdownTime = '2200',
-  [switch]$SkipBootstrap,
-  [switch]$OpenRdp
+  # CSE do Bicep baixa bootstrap do GitHub — desligado por padrão.
+  # O deploy aplica o bootstrap.ps1 local (pt-BR + auto-logon + app) via run-command.
+  [switch]$UseGithubBootstrap,
+  [switch]$SkipLocalBootstrap,
+  # Padrão: abre o RDP já com credencial da conta local (sem pedir senha no cliente)
+  [bool]$OpenRdp = $true
 )
 
 $ErrorActionPreference = 'Stop'
@@ -57,13 +61,10 @@ if (-not $AllowedRdpSource) {
 if ($AdminPassword) {
   $plain = $AdminPassword
 } else {
-  $secure = Read-Host -AsSecureString 'Senha do admin da VM (mín. 12 chars, maiúsc/minúsc/número/símbolo)'
-  $BSTR = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure)
-  try {
-    $plain = [Runtime.InteropServices.Marshal]::PtrToStringAuto($BSTR)
-  } finally {
-    [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($BSTR)
-  }
+  # Gera senha forte automaticamente — não interrompe o deploy pedindo senha.
+  # A conta local na VM fica com auto-logon; o RDP usa cmdkey no cliente.
+  $plain = 'Dm-' + [guid]::NewGuid().ToString('N').Substring(0, 10) + '-Aa1!'
+  Write-Host "Senha da conta local gerada automaticamente (salva no Credential Manager ao abrir o RDP)."
 }
 if ([string]::IsNullOrWhiteSpace($plain) -or $plain.Length -lt 12) {
   throw 'Senha inválida (mínimo 12 caracteres).'
@@ -81,7 +82,7 @@ $paramsObj = [ordered]@{
   vmSize                   = @{ value = $VmSize }
   allowedRdpSource         = @{ value = $AllowedRdpSource }
   autoShutdownTime         = @{ value = $AutoShutdownTime }
-  bootstrapDesktopManager  = @{ value = (-not $SkipBootstrap) }
+  bootstrapDesktopManager  = @{ value = [bool]$UseGithubBootstrap }
 }
 $paramsObj | ConvertTo-Json -Depth 5 | Set-Content -Path $paramsPath -Encoding utf8
 
@@ -111,24 +112,71 @@ if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($ip)) {
   throw "VM/IP nao encontrados - o deploy provavelmente nao concluiu. Resource group: $ResourceGroup"
 }
 
+if (-not $SkipLocalBootstrap) {
+  Write-Host 'Aplicando bootstrap local (pt-BR, conta local com auto-logon, Desktop Manager)...'
+  $pwdB64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($plain))
+  $wrapPath = Join-Path $env:TEMP ("dm-bootstrap-wrap-{0}.ps1" -f [guid]::NewGuid())
+  $bootPath = Join-Path $here 'bootstrap.ps1'
+  # Script único enviado à VM (não pode referenciar caminhos do PC local)
+  $header = @"
+`$ErrorActionPreference = 'Stop'
+`$env:DM_ADMIN_USERNAME = '$AdminUsername'
+`$env:DM_ADMIN_PASSWORD_B64 = '$pwdB64'
+`$env:DM_GITHUB_REPO = 'andersongni/desktop-manager'
+"@
+  $header + "`n" + (Get-Content -LiteralPath $bootPath -Raw) |
+    Set-Content -Path $wrapPath -Encoding utf8
+  try {
+    az vm run-command invoke `
+      --resource-group $ResourceGroup `
+      --name "$NamePrefix-vm" `
+      --command-id RunPowerShellScript `
+      --scripts "@$wrapPath" `
+      --output none
+    if ($LASTEXITCODE -ne 0) {
+      throw "Bootstrap local falhou (exit $LASTEXITCODE)."
+    }
+    Write-Host 'Bootstrap local OK. Reiniciando VM para aplicar auto-logon/idioma...'
+    az vm restart --resource-group $ResourceGroup --name "$NamePrefix-vm" --no-wait | Out-Null
+    Start-Sleep -Seconds 35
+  } finally {
+    Remove-Item -LiteralPath $wrapPath -Force -ErrorAction SilentlyContinue
+  }
+}
+
+# Arquivo .rdp local (sem senha no arquivo) — credencial vai para o Credential Manager
+$rdpPath = Join-Path $here "$NamePrefix.rdp"
+@(
+  "full address:s:$ip"
+  "username:s:$AdminUsername"
+  'prompt for credentials:i:0'
+  'authentication level:i:2'
+  'negotiate security layer:i:1'
+) | Set-Content -Path $rdpPath -Encoding ascii
+
 Write-Host ''
 Write-Host '=== VM pronta ===' -ForegroundColor Green
 Write-Host "Resource group : $ResourceGroup"
 Write-Host "VM size        : $VmSize"
-Write-Host "Usuário        : $AdminUsername"
+Write-Host "Usuário local  : $AdminUsername (auto-logon na VM)"
 Write-Host "IP público     : $ip"
 Write-Host "RDP            : mstsc /v:$ip"
+Write-Host "Atalho RDP     : $rdpPath"
 Write-Host "Pacote         : C:\DesktopManager-release (após o bootstrap)"
 Write-Host "Auto-shutdown  : $AutoShutdownTime (E. South America Standard Time)"
 Write-Host ''
 Write-Host 'Para destruir tudo:  .\destroy.ps1'
 Write-Host 'Para só parar (deallocate): az vm deallocate -g $ResourceGroup -n "$NamePrefix-vm"'
 
+# Sempre registra a conta local no Credential Manager deste PC (RDP sem digitar senha)
+Write-Host ''
+Write-Host "Registrando credencial local '$AdminUsername' para $ip ..."
+cmdkey /generic:"TERMSRV/$ip" /user:".\$AdminUsername" /pass:"$plain" | Out-Null
+cmdkey /generic:"TERMSRV/$ip" /user:"$AdminUsername" /pass:"$plain" | Out-Null
+
 if ($OpenRdp) {
-  Write-Host ''
-  Write-Host "Abrindo Remote Desktop para $ip ..."
-  cmdkey /generic:"TERMSRV/$ip" /user:"$AdminUsername" /pass:"$plain" | Out-Null
-  Start-Process mstsc -ArgumentList "/v:$ip"
+  Write-Host "Abrindo Remote Desktop para $ip (sem pedir senha)..."
+  Start-Process mstsc -ArgumentList "`"$rdpPath`""
 }
 
 $plain = $null

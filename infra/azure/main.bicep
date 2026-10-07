@@ -207,6 +207,9 @@ resource autoShutdown 'Microsoft.DevTestLab/schedules@2018-09-15' = {
   }
 }
 
+// Senha em base64 evita quebrar o commandToExecute com caracteres especiais
+var adminPasswordB64 = base64(adminPassword)
+
 resource bootstrap 'Microsoft.Compute/virtualMachines/extensions@2024-07-01' = if (bootstrapDesktopManager) {
   parent: vm
   name: 'BootstrapDesktopManager'
@@ -222,7 +225,8 @@ resource bootstrap 'Microsoft.Compute/virtualMachines/extensions@2024-07-01' = i
       ]
     }
     protectedSettings: {
-      commandToExecute: 'powershell -ExecutionPolicy Bypass -Command "$env:DM_GITHUB_REPO=\'${githubRepo}\'; & .\\bootstrap.ps1"'
+      // Conta local + auto-logon: username/senha só em protectedSettings (criptografado)
+      commandToExecute: 'powershell -ExecutionPolicy Bypass -Command "$env:DM_GITHUB_REPO=\'${githubRepo}\'; $env:DM_ADMIN_USERNAME=\'${adminUsername}\'; $env:DM_ADMIN_PASSWORD_B64=\'${adminPasswordB64}\'; & .\\bootstrap.ps1"'
     }
   }
 }
